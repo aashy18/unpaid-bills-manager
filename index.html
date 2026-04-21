@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unpaid Bills Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> -->
 <style>
 :root{
   --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
@@ -913,12 +913,9 @@ let supabaseClient;
 // Initialize Supabase when the script loads
 function initializeSupabase() {
   try {
-    if (typeof window.supabase !== 'undefined') {
-      supabaseClient = window.supabase.createClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
-      console.log('Supabase client initialized successfully');
-    } else {
-      console.warn('Supabase library not found, will fallback to LocalStorage');
-    }
+    // Temporarily disabled to isolate doLogin issue
+    console.log('Supabase initialization temporarily disabled');
+    supabaseClient = null;
   } catch (error) {
     console.error('Error initializing Supabase:', error);
   }
@@ -927,13 +924,8 @@ function initializeSupabase() {
 // ââ Supabase Connection Test ââ
 async function testSupabaseConnection() {
   try {
-    if (!supabaseClient) {
-      console.warn('Supabase client not initialized');
-      return false;
-    }
-    const { data, error } = await supabaseClient.from('_test_connection').select('*').limit(1);
-    console.log('Supabase connection test:', error ? 'Failed' : 'Success');
-    return !error;
+    console.log('Supabase connection test temporarily disabled');
+    return false;
   } catch (err) {
     console.error('Supabase connection error:', err);
     return false;
@@ -1233,99 +1225,21 @@ let socket = null;
 let isServerMode = false;
 let syncInProgress = false;
 
-// Initialize Socket.IO connection
+// Initialize Socket.IO connection (temporarily disabled)
 function initializeSocket() {
   try {
-    socket = typeof io !== 'undefined' ? io() : null;
-    isServerMode = true;
-    
-    console.log('🔗 Connected to server for real-time sync');
-    
-    // Handle data sync from server
-    socket.on('dataSync', (data) => {
-      if (!syncInProgress) {
-        syncInProgress = true;
-        try {
-          const isServerDataEmpty = (!data.unpaidBills || data.unpaidBills.length === 0) && 
-                                    (!data.vendorCustomers || data.vendorCustomers.length === 0);
-          const isLocalDataPresent = unpaidBills.length > 0 || vendorCustomers.length > 0;
-
-          if (isServerDataEmpty && isLocalDataPresent) {
-            console.log('Server data is empty, but local data is present. Pushing local data to server.');
-            syncToServer();
-          } else {
-            // Update local data with server data
-            if (data.unpaidBills) { 
-              unpaidBills = data.unpaidBills; 
-              localStorage.setItem(STORAGE_KEYS.unpaid, JSON.stringify(unpaidBills));
-            }
-            if (data.vendorCustomers) {
-              vendorCustomers = data.vendorCustomers;
-              localStorage.setItem(STORAGE_KEYS.vendor, JSON.stringify(vendorCustomers));
-            }
-            if (data.deletedCustomers) {
-              deletedCustomers = data.deletedCustomers;
-              localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
-            }
-            if (data.users) {
-              const users = data.users;
-              localStorage.setItem(USERS_KEY, JSON.stringify(users));
-            }
-            
-            // Update UI
-            renderAll();
-            console.log('📊 Data synced from server');
-          }
-        } catch (error) {
-          console.error('❌ Error syncing data:', error);
-        } finally {
-          syncInProgress = false;
-        }
-      }
-    });
-    
-    // Handle errors
-    socket.on('error', (error) => {
-      console.error('❌ Socket error:', error);
-      notify('Connection error: ' + error, 'error');
-    });
-    
-    // Handle disconnection
-    socket.on('disconnect', () => {
-      console.log('🔌 Disconnected from server');
-      isServerMode = false;
-    });
-    
-    // Handle reconnection
-    socket.on('connect', () => {
-      console.log('🔗 Reconnected to server');
-      isServerMode = true;
-      // Immediately request latest state from server on connection
-      socket.emit('requestData');
-    });
-    
+    console.log('📱 Socket.io temporarily disabled - running in offline mode');
+    socket = null;
+    isServerMode = false;
   } catch (error) {
     console.log('📱 Running in offline mode (no server)');
     isServerMode = false;
   }
 }
 
-// Send data to server for sync
+// Send data to server for sync (temporarily disabled)
 function syncToServer() {
-  if (isServerMode && socket && !syncInProgress) {
-    try {
-      const data = {
-        unpaidBills,
-        vendorCustomers,
-        deletedCustomers,
-        users: loadUsers()
-      };
-      socket.emit('updateData', data);
-      console.log('📤 Data synced to server');
-    } catch (error) {
-      console.error('❌ Error syncing to server:', error);
-    }
-  }
+  console.log('📤 Server sync temporarily disabled');
 }
 
 // ── USER MANAGEMENT ──
@@ -1620,52 +1534,31 @@ function validateDataIntegrity() {
 // ── DATA LOADING ──
 async function loadAll() {
   try {
-    // Load from Supabase
-    unpaidBills = await loadCustomersFromSupabase('unpaid');
-    vendorCustomers = await loadCustomersFromSupabase('vendor');
-    deletedCustomers = await loadDeletedCustomersFromSupabase();
-    
-    // Load payments and credits for each customer
-    await loadPaymentsAndCredits();
-    
-    console.log('Data loaded from Supabase successfully');
-  } catch (error) {
-    console.error('Error loading data from Supabase:', error);
-    // Fallback to localStorage if Supabase fails
+    // Temporarily using localStorage only
+    console.log('Loading from localStorage (Supabase temporarily disabled)');
     unpaidBills = loadFromStorage(STORAGE_KEYS.unpaid);
     vendorCustomers = loadFromStorage(STORAGE_KEYS.vendor);
     deletedCustomers = loadFromStorage(STORAGE_KEYS.deleted);
+  } catch (error) {
+    console.error('Error loading data:', error);
+    // Initialize empty arrays if loading fails
+    unpaidBills = [];
+    vendorCustomers = [];
+    deletedCustomers = [];
   }
+  
+  renderAll();
 }
 
-// Load payments and credits for all customers
+// Load payments and credits for all customers (temporarily disabled)
 async function loadPaymentsAndCredits() {
   try {
-    // Load all customers with their payments and credits
+    console.log('Payments and credits loading temporarily disabled');
+    // Initialize empty arrays for payments and credits
     const allCustomers = [...unpaidBills, ...vendorCustomers];
-    
     for (const customer of allCustomers) {
-      // Load payments
-      const { data: payments, error: paymentError } = await supabaseClient
-        .from('payments')
-        .select('*')
-        .eq('customer_id', customer.id)
-        .order('timestamp', { ascending: false });
-      
-      if (!paymentError) {
-        customer.payments = payments || [];
-      }
-      
-      // Load credits
-      const { data: credits, error: creditError } = await supabaseClient
-        .from('credits')
-        .select('*')
-        .eq('customer_id', customer.id)
-        .order('timestamp', { ascending: false });
-      
-      if (!creditError) {
-        customer.credits = credits || [];
-      }
+      customer.payments = customer.payments || [];
+      customer.credits = customer.credits || [];
     }
   } catch (error) {
     console.error('Error loading payments and credits:', error);
@@ -2166,11 +2059,11 @@ async function saveCustomer(){
       if(index !== -1) {
         const updatedCustomer = { ...list[index], name, number, amount };
         
-        // Save to Supabase
-        await saveCustomerToSupabase(updatedCustomer, currentList, currentUser?.id);
-        
-        // Update local array
+        // Update local array first
         list[index] = updatedCustomer;
+        
+        // Save to localStorage
+        saveToStorage(currentList === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor, list);
         renderAll();
         notify('Customer updated!');
       }
@@ -2194,11 +2087,11 @@ async function saveCustomer(){
         createdAt: ts()
       };
       
-      // Save to Supabase
-      await saveCustomerToSupabase(newCust, 'unpaid', currentUser?.id);
-      
       // Add new customer at the beginning of the array (upper area on the line)
       unpaidBills.unshift(newCust);
+      
+      // Save to localStorage
+      saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
       renderAll();
       notify('Customer added!');
     }
