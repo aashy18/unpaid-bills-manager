@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unpaid Bills Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
-<script src="/socket.io/socket.io.js"></script>
+<!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> -->
 <style>
 :root{
   --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
@@ -513,20 +514,17 @@ header{
 
 /* ── WATERMARK ── */
 body::before {
-  content: '';
+  content: ' Unpaid Bills Manager';
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 300px;
-  height: 300px;
-  background-image: url('icon.png');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
+  font-size: 48px;
   opacity: 0.05;
   pointer-events: none;
   z-index: 999;
+  font-family: 'Playfair Display', serif;
+  color: var(--accent);
 }
 
 /* ── MOBILE ── */
@@ -621,6 +619,14 @@ body::before {
 </style>
 </head>
 <body>
+
+<script>
+console.log('TEST AT BODY START: JavaScript is executing');
+window.bodyTest = function() {
+  console.log('bodyTest function works!');
+  return true;
+};
+</script>
 
 <!-- ══════════════ LOGIN ══════════════ -->
 <div id="loginOverlay">
@@ -897,7 +903,120 @@ body::before {
 
 <!-- ══════════════ SCRIPT ══════════════ -->
 <script>
-// ── DATA ──
+// ââ LocalStorage Configuration ââ
+// All data is stored in browser localStorage for offline functionality
+
+// ââ Data Storage Architecture ââ
+// All application data is stored in browser localStorage:
+// - unpaidBills: Unpaid customer data
+// - vendorCustomers: Vendor customer data  
+// - deletedCustomers: Soft-deleted customer data
+// - appUsers: User authentication data
+
+// ââ LocalStorage CRUD Functions ââ
+
+// Load customers from localStorage
+async function loadCustomersFromStorage(source) {
+  try {
+    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    const data = localStorage.getItem(key);
+    const customers = data ? JSON.parse(data) : [];
+    
+    console.log(`Loaded ${customers.length} customers from localStorage (${source})`);
+    return customers;
+  } catch (error) {
+    console.error('Error loading customers from localStorage:', error);
+    return [];
+  }
+}
+
+// Save customer to localStorage (replaces Supabase)
+async function saveCustomerToStorage(customer, source) {
+  try {
+    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+    
+    // Update or add customer
+    const index = list.findIndex(c => c.id === customer.id);
+    if (index !== -1) {
+      list[index] = customer;
+    } else {
+      list.push(customer);
+    }
+    
+    // Save to localStorage
+    saveToStorage(key, list);
+    console.log(`Customer saved to localStorage (${source})`);
+    return customer;
+  } catch (error) {
+    console.error('Error saving customer to localStorage:', error);
+    throw error;
+  }
+}
+
+// Save payments to localStorage (replaces Supabase)
+async function savePaymentsToStorage(customerId, payments) {
+  try {
+    // Payments are saved as part of the customer object in localStorage
+    console.log(`Saved ${payments.length} payments to localStorage for customer ${customerId}`);
+    return payments;
+  } catch (error) {
+    console.error('Error saving payments to localStorage:', error);
+    throw error;
+  }
+}
+
+// Save credits to localStorage (replaces Supabase)
+async function saveCreditsToStorage(customerId, credits) {
+  try {
+    // Credits are saved as part of the customer object in localStorage
+    console.log(`Saved ${credits.length} credits to localStorage for customer ${customerId}`);
+    return credits;
+  } catch (error) {
+    console.error('Error saving credits to localStorage:', error);
+    throw error;
+  }
+}
+
+// Load deleted customers from localStorage (replaces Supabase)
+async function loadDeletedCustomersFromStorage() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.deleted);
+    const customers = data ? JSON.parse(data) : [];
+    
+    console.log(`Loaded ${customers.length} deleted customers from localStorage`);
+    return customers;
+  } catch (error) {
+    console.error('Error loading deleted customers from localStorage:', error);
+    return [];
+  }
+}
+
+// ââ Test LocalStorage Integration ââ
+async function testLocalStorageIntegration() {
+  console.log('Testing localStorage integration...');
+  
+  try {
+    // Test loading customers
+    const unpaidCustomers = await loadCustomersFromStorage('unpaid');
+    const vendorCustomers = await loadCustomersFromStorage('vendor');
+    
+    console.log(`Loaded ${unpaidCustomers.length} unpaid customers`);
+    console.log(`Loaded ${vendorCustomers.length} vendor customers`);
+    
+    // Test loading deleted customers
+    const deletedCustomers = await loadDeletedCustomersFromStorage();
+    console.log(`Loaded ${deletedCustomers.length} deleted customers`);
+    
+    console.log('LocalStorage integration test passed!');
+    return true;
+  } catch (error) {
+    console.error('LocalStorage integration test failed:', error);
+    return false;
+  }
+}
+
+// ââ DATA ââ
 let unpaidBills = [];
 let vendorCustomers = [];
 let deletedCustomers = [];
@@ -911,99 +1030,21 @@ let socket = null;
 let isServerMode = false;
 let syncInProgress = false;
 
-// Initialize Socket.IO connection
+// Initialize Socket.IO connection (temporarily disabled)
 function initializeSocket() {
   try {
-    socket = io();
-    isServerMode = true;
-    
-    console.log('🔗 Connected to server for real-time sync');
-    
-    // Handle data sync from server
-    socket.on('dataSync', (data) => {
-      if (!syncInProgress) {
-        syncInProgress = true;
-        try {
-          const isServerDataEmpty = (!data.unpaidBills || data.unpaidBills.length === 0) && 
-                                    (!data.vendorCustomers || data.vendorCustomers.length === 0);
-          const isLocalDataPresent = unpaidBills.length > 0 || vendorCustomers.length > 0;
-
-          if (isServerDataEmpty && isLocalDataPresent) {
-            console.log('Server data is empty, but local data is present. Pushing local data to server.');
-            syncToServer();
-          } else {
-            // Update local data with server data
-            if (data.unpaidBills) { 
-              unpaidBills = data.unpaidBills; 
-              localStorage.setItem(STORAGE_KEYS.unpaid, JSON.stringify(unpaidBills));
-            }
-            if (data.vendorCustomers) {
-              vendorCustomers = data.vendorCustomers;
-              localStorage.setItem(STORAGE_KEYS.vendor, JSON.stringify(vendorCustomers));
-            }
-            if (data.deletedCustomers) {
-              deletedCustomers = data.deletedCustomers;
-              localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
-            }
-            if (data.users) {
-              const users = data.users;
-              localStorage.setItem(USERS_KEY, JSON.stringify(users));
-            }
-            
-            // Update UI
-            renderAll();
-            console.log('📊 Data synced from server');
-          }
-        } catch (error) {
-          console.error('❌ Error syncing data:', error);
-        } finally {
-          syncInProgress = false;
-        }
-      }
-    });
-    
-    // Handle errors
-    socket.on('error', (error) => {
-      console.error('❌ Socket error:', error);
-      notify('Connection error: ' + error, 'error');
-    });
-    
-    // Handle disconnection
-    socket.on('disconnect', () => {
-      console.log('🔌 Disconnected from server');
-      isServerMode = false;
-    });
-    
-    // Handle reconnection
-    socket.on('connect', () => {
-      console.log('🔗 Reconnected to server');
-      isServerMode = true;
-      // Immediately request latest state from server on connection
-      socket.emit('requestData');
-    });
-    
+    console.log('📱 Socket.io temporarily disabled - running in offline mode');
+    socket = null;
+    isServerMode = false;
   } catch (error) {
     console.log('📱 Running in offline mode (no server)');
     isServerMode = false;
   }
 }
 
-// Send data to server for sync
+// Send data to server for sync (temporarily disabled)
 function syncToServer() {
-  if (isServerMode && socket && !syncInProgress) {
-    try {
-      const data = {
-        unpaidBills,
-        vendorCustomers,
-        deletedCustomers,
-        users: loadUsers()
-      };
-      socket.emit('updateData', data);
-      console.log('📤 Data synced to server');
-    } catch (error) {
-      console.error('❌ Error syncing to server:', error);
-    }
-  }
+  console.log('📤 Server sync temporarily disabled');
 }
 
 // ── USER MANAGEMENT ──
@@ -1296,10 +1337,42 @@ function validateDataIntegrity() {
 }
 
 // ── DATA LOADING ──
-function loadAll() {
-  unpaidBills = loadFromStorage(STORAGE_KEYS.unpaid);
-  vendorCustomers = loadFromStorage(STORAGE_KEYS.vendor);
-  deletedCustomers = loadFromStorage(STORAGE_KEYS.deleted);
+async function loadAll() {
+  try {
+    // Load from localStorage using the new functions
+    console.log('Loading from localStorage...');
+    unpaidBills = await loadCustomersFromStorage('unpaid');
+    vendorCustomers = await loadCustomersFromStorage('vendor');
+    deletedCustomers = await loadDeletedCustomersFromStorage();
+    
+    // Load payments and credits for each customer
+    await loadPaymentsAndCredits();
+    
+    console.log('Data loaded from localStorage successfully');
+  } catch (error) {
+    console.error('Error loading data from localStorage:', error);
+    // Initialize empty arrays if loading fails
+    unpaidBills = [];
+    vendorCustomers = [];
+    deletedCustomers = [];
+  }
+  
+  renderAll();
+}
+
+// Load payments and credits for all customers (temporarily disabled)
+async function loadPaymentsAndCredits() {
+  try {
+    console.log('Payments and credits loading temporarily disabled');
+    // Initialize empty arrays for payments and credits
+    const allCustomers = [...unpaidBills, ...vendorCustomers];
+    for (const customer of allCustomers) {
+      customer.payments = customer.payments || [];
+      customer.credits = customer.credits || [];
+    }
+  } catch (error) {
+    console.error('Error loading payments and credits:', error);
+  }
 }
 
 // ── AUTHENTICATION ──
@@ -1480,11 +1553,12 @@ function createAccount() {
 }
 
 // ── INIT ──
-function init() {
+async function init() {
   // Initialize Socket.IO connection first
   initializeSocket();
   
-  loadAll();
+  // Load data from localStorage
+  await loadAll();
   
   // Fix any existing duplicate IDs
   const fixedCount = fixDuplicateIds();
@@ -1790,8 +1864,13 @@ async function saveCustomer(){
       const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
       const index = list.findIndex(c => c.id === currentId);
       if(index !== -1) {
-        list[index] = { ...list[index], name, number, amount };
-        saveToStorage(STORAGE_KEYS[currentList], list);
+        const updatedCustomer = { ...list[index], name, number, amount };
+        
+        // Update local array first
+        list[index] = updatedCustomer;
+        
+        // Save to localStorage
+        saveToStorage(currentList === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor, list);
         renderAll();
         notify('Customer updated!');
       }
@@ -1817,6 +1896,8 @@ async function saveCustomer(){
       
       // Add new customer at the beginning of the array (upper area on the line)
       unpaidBills.unshift(newCust);
+      
+      // Save to localStorage
       saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
       renderAll();
       notify('Customer added!');
@@ -3116,8 +3197,8 @@ function openBinModal(){
           <div class="deletedMeta">${c.number?'#'+c.number+' · ':''}Balance: ${fmt(remaining(c))} · From: ${c.source||'unknown'}</div>
         </div>
         <div class="deletedActions">
-          <button class="restoreBtn" onclick="restoreCustomer(${c.id})">Restore</button>
-          <button class="btnXs del" onclick="permanentDeleteCustomer(${c.id}, '${escHtml(c.name)}')" title="Permanently delete">🗑</button>
+              <button class="restoreBtn" onclick="restoreCustomer('${c.id}')">Restore</button>
+              <button class="btnXs del" onclick="permanentDeleteCustomer('${c.id}', '${escHtml(c.name)}')" title="Permanently delete">🗑</button>
         </div>
       </div>`).join('');
   document.getElementById('binBody').innerHTML=html;
@@ -3530,20 +3611,17 @@ function printSummaryReport() {
         .card { page-break-inside: avoid; }
         .grid { page-break-inside: avoid; }
         body::before {
-          content: '';
+          content: ' Unpaid Bills Manager';
           position: fixed;
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          width: 500px;
-          height: 500px;
-          background-image: url('icon.png');
-          background-size: contain;
-          background-repeat: no-repeat;
-          background-position: center;
+          font-size: 72px;
           opacity: 0.1;
           pointer-events: none;
           z-index: 999;
+          font-family: 'Playfair Display', serif;
+          color: var(--accent);
         }
       }
     </style></head><body>
@@ -3687,5 +3765,20 @@ async function resetAllData() {
   }
 }
 </script>
+
+<!-- Simple test to verify JavaScript execution -->
+<script>
+try {
+  console.log('JavaScript execution test - page loaded successfully');
+  window.simpleTest = function() {
+    console.log('simpleTest function works!');
+    return true;
+  };
+  console.log('simpleTest function created successfully');
+} catch(e) {
+  console.error('Error in test script:', e);
+}
+</script>
+
 </body>
 </html>

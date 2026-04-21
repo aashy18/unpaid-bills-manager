@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test doLogin Function</title>
+</head>
+<body>
+    <h1>Testing doLogin Function</h1>
+    <button onclick="testDoLogin()">Test if doLogin exists</button>
+    <div id="result"></div>
+
+    <script>
+        // Load the main HTML file to test
+        function testDoLogin() {
+            fetch('./index.html')
+                .then(response => response.text())
+                .then(html => {
+                    // Check if doLogin is defined in the HTML
+                    if (html.includes('function doLogin()')) {
+                        document.getElementById('result').innerHTML = '✅ doLogin function found in HTML';
+                    } else {
+                        document.getElementById('result').innerHTML = '❌ doLogin function NOT found in HTML';
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('result').innerHTML = 'Error: ' + error;
+                });
+        }
+    </script>
+</body>
+</html>
