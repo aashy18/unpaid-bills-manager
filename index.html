@@ -1012,7 +1012,7 @@ CREATE INDEX idx_credits_status ON credits(status);
 // Load customers from Supabase
 async function loadCustomersFromSupabase(source) {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('customers')
       .select('*')
       .eq('source', source)
@@ -1050,7 +1050,7 @@ async function saveCustomerToSupabase(customer, source, userId) {
       created_by: userId
     };
     
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('customers')
       .upsert(customerData)
       .select();
@@ -1085,7 +1085,7 @@ async function savePaymentsToSupabase(customerId, payments, userId) {
       user: userId
     }));
     
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('payments')
       .upsert(paymentData);
     
@@ -1110,7 +1110,7 @@ async function saveCreditsToSupabase(customerId, credits, userId) {
       user: userId
     }));
     
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('credits')
       .upsert(creditData);
     
@@ -1137,14 +1137,14 @@ async function deleteCustomerFromSupabase(customer, userId) {
       deleted_by: userId
     };
     
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseClient
       .from('deleted_customers')
       .insert(deletedData);
     
     if (deleteError) throw deleteError;
     
     // Then delete from customers table
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from('customers')
       .delete()
       .eq('id', customer.id);
@@ -1161,7 +1161,7 @@ async function deleteCustomerFromSupabase(customer, userId) {
 // Load deleted customers
 async function loadDeletedCustomersFromSupabase() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
       .from('deleted_customers')
       .select('*')
       .order('deleted_at', { ascending: false });
@@ -1642,7 +1642,7 @@ async function loadPaymentsAndCredits() {
     
     for (const customer of allCustomers) {
       // Load payments
-      const { data: payments, error: paymentError } = await supabase
+      const { data: payments, error: paymentError } = await supabaseClient
         .from('payments')
         .select('*')
         .eq('customer_id', customer.id)
@@ -1653,7 +1653,7 @@ async function loadPaymentsAndCredits() {
       }
       
       // Load credits
-      const { data: credits, error: creditError } = await supabase
+      const { data: credits, error: creditError } = await supabaseClient
         .from('credits')
         .select('*')
         .eq('customer_id', customer.id)
@@ -3493,8 +3493,8 @@ function openBinModal(){
           <div class="deletedMeta">${c.number?'#'+c.number+' · ':''}Balance: ${fmt(remaining(c))} · From: ${c.source||'unknown'}</div>
         </div>
         <div class="deletedActions">
-          <button class="restoreBtn" onclick="restoreCustomer(${c.id})">Restore</button>
-          <button class="btnXs del" onclick="permanentDeleteCustomer(${c.id}, '${escHtml(c.name)}')" title="Permanently delete">🗑</button>
+              <button class="restoreBtn" onclick="restoreCustomer('${c.id}')">Restore</button>
+              <button class="btnXs del" onclick="permanentDeleteCustomer('${c.id}', '${escHtml(c.name)}')" title="Permanently delete">🗑</button>
         </div>
       </div>`).join('');
   document.getElementById('binBody').innerHTML=html;
