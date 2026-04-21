@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unpaid Bills Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
-<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -908,13 +908,13 @@ const NEXT_PUBLIC_SUPABASE_URL = 'https://jnqnssbofwaioudalovk.supabase.co';
 const NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_ndFcMjtJFL37fVmi3ZPSEA_U_oBUmSb';
 
 // ââ Supabase Client Initialization ââ
-let supabase;
+let supabaseClient;
 
 // Initialize Supabase when the script loads
 function initializeSupabase() {
   try {
-    if (typeof supabaseJs !== 'undefined') {
-      supabase = supabaseJs.createClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+    if (typeof window.supabase !== 'undefined') {
+      supabaseClient = window.supabase.createClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
       console.log('Supabase client initialized successfully');
     } else {
       console.warn('Supabase library not found, will fallback to LocalStorage');
@@ -927,7 +927,11 @@ function initializeSupabase() {
 // ââ Supabase Connection Test ââ
 async function testSupabaseConnection() {
   try {
-    const { data, error } = await supabase.from('_test_connection').select('*').limit(1);
+    if (!supabaseClient) {
+      console.warn('Supabase client not initialized');
+      return false;
+    }
+    const { data, error } = await supabaseClient.from('_test_connection').select('*').limit(1);
     console.log('Supabase connection test:', error ? 'Failed' : 'Success');
     return !error;
   } catch (err) {
