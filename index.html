@@ -8,6 +8,7 @@
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
@@ -513,20 +514,17 @@ header{
 
 /* ── WATERMARK ── */
 body::before {
-  content: '';
+  content: ' Unpaid Bills Manager';
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 300px;
-  height: 300px;
-  background-image: url('icon.png');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
+  font-size: 48px;
   opacity: 0.05;
   pointer-events: none;
   z-index: 999;
+  font-family: 'Playfair Display', serif;
+  color: var(--accent);
 }
 
 /* ── MOBILE ── */
@@ -621,6 +619,14 @@ body::before {
 </style>
 </head>
 <body>
+
+<script>
+console.log('TEST AT BODY START: JavaScript is executing');
+window.bodyTest = function() {
+  console.log('bodyTest function works!');
+  return true;
+};
+</script>
 
 <!-- ══════════════ LOGIN ══════════════ -->
 <div id="loginOverlay">
@@ -897,7 +903,319 @@ body::before {
 
 <!-- ══════════════ SCRIPT ══════════════ -->
 <script>
-// ── DATA ──
+// ââ Supabase Environment Variables ââ
+const NEXT_PUBLIC_SUPABASE_URL = 'https://jnqnssbofwaioudalovk.supabase.co';
+const NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_ndFcMjtJFL37fVmi3ZPSEA_U_oBUmSb';
+
+// ââ Supabase Client Initialization ââ
+let supabase;
+
+// Initialize Supabase when the script loads
+function initializeSupabase() {
+  try {
+    if (typeof supabaseJs !== 'undefined') {
+      supabase = supabaseJs.createClient(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+      console.log('Supabase client initialized successfully');
+    } else {
+      console.warn('Supabase library not found, will fallback to LocalStorage');
+    }
+  } catch (error) {
+    console.error('Error initializing Supabase:', error);
+  }
+}
+
+// ââ Supabase Connection Test ââ
+async function testSupabaseConnection() {
+  try {
+    const { data, error } = await supabase.from('_test_connection').select('*').limit(1);
+    console.log('Supabase connection test:', error ? 'Failed' : 'Success');
+    return !error;
+  } catch (err) {
+    console.error('Supabase connection error:', err);
+    return false;
+  }
+}
+
+// ââ Supabase Database Schema ââ
+/*
+Run this SQL in your Supabase SQL Editor:
+
+-- Users table
+CREATE TABLE users (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  full_name VARCHAR(100),
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Customers table
+CREATE TABLE customers (
+  id TEXT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  number VARCHAR(100),
+  amount DECIMAL(12,2) NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('unpaid', 'vendor')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_by UUID REFERENCES users(id)
+);
+
+-- Payments table
+CREATE TABLE payments (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  amount DECIMAL(12,2) NOT NULL,
+  note TEXT,
+  date DATE NOT NULL,
+  time TIME NOT NULL,
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  user UUID REFERENCES users(id)
+);
+
+-- Credits table
+CREATE TABLE credits (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  amount DECIMAL(12,2) NOT NULL,
+  note TEXT,
+  status VARCHAR(20) NOT NULL CHECK (status IN ('Arrived', 'Not Arrived')),
+  date DATE NOT NULL,
+  time TIME NOT NULL,
+  timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  user UUID REFERENCES users(id)
+);
+
+-- Deleted customers (soft delete)
+CREATE TABLE deleted_customers (
+  id TEXT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  number VARCHAR(100),
+  amount DECIMAL(12,2) NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('unpaid', 'vendor')),
+  payments JSONB,
+  credits JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  deleted_by UUID REFERENCES users(id)
+);
+
+-- Indexes for better performance
+CREATE INDEX idx_customers_source ON customers(source);
+CREATE INDEX idx_customers_name ON customers(name);
+CREATE INDEX idx_payments_customer_id ON payments(customer_id);
+CREATE INDEX idx_credits_customer_id ON credits(customer_id);
+CREATE INDEX idx_credits_status ON credits(status);
+*/
+
+// ââ Supabase CRUD Functions ââ
+
+// Load customers from Supabase
+async function loadCustomersFromSupabase(source) {
+  try {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('source', source)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    // Transform data to match current structure
+    const customers = data.map(customer => ({
+      id: customer.id,
+      name: customer.name,
+      number: customer.number,
+      amount: customer.amount,
+      payments: [], // Will be loaded separately
+      credits: [], // Will be loaded separately
+      createdAt: customer.created_at
+    }));
+    
+    return customers;
+  } catch (error) {
+    console.error('Error loading customers:', error);
+    return [];
+  }
+}
+
+// Save customer to Supabase
+async function saveCustomerToSupabase(customer, source, userId) {
+  try {
+    const customerData = {
+      id: customer.id,
+      name: customer.name,
+      number: customer.number,
+      amount: customer.amount,
+      source: source,
+      created_by: userId
+    };
+    
+    const { data, error } = await supabase
+      .from('customers')
+      .upsert(customerData)
+      .select();
+    
+    if (error) throw error;
+    
+    // Save payments and credits
+    if (customer.payments && customer.payments.length > 0) {
+      await savePaymentsToSupabase(customer.id, customer.payments, userId);
+    }
+    
+    if (customer.credits && customer.credits.length > 0) {
+      await saveCreditsToSupabase(customer.id, customer.credits, userId);
+    }
+    
+    return data[0];
+  } catch (error) {
+    console.error('Error saving customer:', error);
+    throw error;
+  }
+}
+
+// Save payments to Supabase
+async function savePaymentsToSupabase(customerId, payments, userId) {
+  try {
+    const paymentData = payments.map(payment => ({
+      customer_id: customerId,
+      amount: payment.amount,
+      note: payment.note,
+      date: payment.date,
+      time: payment.time,
+      user: userId
+    }));
+    
+    const { data, error } = await supabase
+      .from('payments')
+      .upsert(paymentData);
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving payments:', error);
+    throw error;
+  }
+}
+
+// Save credits to Supabase
+async function saveCreditsToSupabase(customerId, credits, userId) {
+  try {
+    const creditData = credits.map(credit => ({
+      customer_id: customerId,
+      amount: credit.amount,
+      note: credit.note,
+      status: credit.status,
+      date: credit.date,
+      time: credit.time,
+      user: userId
+    }));
+    
+    const { data, error } = await supabase
+      .from('credits')
+      .upsert(creditData);
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving credits:', error);
+    throw error;
+  }
+}
+
+// Delete customer (soft delete)
+async function deleteCustomerFromSupabase(customer, userId) {
+  try {
+    // First save to deleted_customers
+    const deletedData = {
+      id: customer.id,
+      name: customer.name,
+      number: customer.number,
+      amount: customer.amount,
+      source: customer.source,
+      payments: customer.payments,
+      credits: customer.credits,
+      deleted_by: userId
+    };
+    
+    const { error: deleteError } = await supabase
+      .from('deleted_customers')
+      .insert(deletedData);
+    
+    if (deleteError) throw deleteError;
+    
+    // Then delete from customers table
+    const { error } = await supabase
+      .from('customers')
+      .delete()
+      .eq('id', customer.id);
+    
+    if (error) throw error;
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting customer:', error);
+    throw error;
+  }
+}
+
+// Load deleted customers
+async function loadDeletedCustomersFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('deleted_customers')
+      .select('*')
+      .order('deleted_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    return data.map(customer => ({
+      id: customer.id,
+      name: customer.name,
+      number: customer.number,
+      amount: customer.amount,
+      source: customer.source,
+      payments: customer.payments || [],
+      credits: customer.credits || [],
+      deletedAt: customer.deleted_at
+    }));
+  } catch (error) {
+    console.error('Error loading deleted customers:', error);
+    return [];
+  }
+}
+
+// ââ Test Supabase Integration ââ
+async function testSupabaseIntegration() {
+  console.log('Testing Supabase integration...');
+  
+  try {
+    // Test connection
+    const connected = await testSupabaseConnection();
+    if (!connected) {
+      console.error('Supabase connection failed');
+      return false;
+    }
+    
+    // Test loading customers
+    const unpaidCustomers = await loadCustomersFromSupabase('unpaid');
+    const vendorCustomers = await loadCustomersFromSupabase('vendor');
+    
+    console.log(`Loaded ${unpaidCustomers.length} unpaid customers`);
+    console.log(`Loaded ${vendorCustomers.length} vendor customers`);
+    
+    // Test loading deleted customers
+    const deletedCustomers = await loadDeletedCustomersFromSupabase();
+    console.log(`Loaded ${deletedCustomers.length} deleted customers`);
+    
+    console.log('Supabase integration test passed!');
+    return true;
+  } catch (error) {
+    console.error('Supabase integration test failed:', error);
+    return false;
+  }
+}
+
+// ââ DATA ââ
 let unpaidBills = [];
 let vendorCustomers = [];
 let deletedCustomers = [];
@@ -914,7 +1232,7 @@ let syncInProgress = false;
 // Initialize Socket.IO connection
 function initializeSocket() {
   try {
-    socket = io();
+    socket = typeof io !== 'undefined' ? io() : null;
     isServerMode = true;
     
     console.log('🔗 Connected to server for real-time sync');
@@ -1296,10 +1614,58 @@ function validateDataIntegrity() {
 }
 
 // ── DATA LOADING ──
-function loadAll() {
-  unpaidBills = loadFromStorage(STORAGE_KEYS.unpaid);
-  vendorCustomers = loadFromStorage(STORAGE_KEYS.vendor);
-  deletedCustomers = loadFromStorage(STORAGE_KEYS.deleted);
+async function loadAll() {
+  try {
+    // Load from Supabase
+    unpaidBills = await loadCustomersFromSupabase('unpaid');
+    vendorCustomers = await loadCustomersFromSupabase('vendor');
+    deletedCustomers = await loadDeletedCustomersFromSupabase();
+    
+    // Load payments and credits for each customer
+    await loadPaymentsAndCredits();
+    
+    console.log('Data loaded from Supabase successfully');
+  } catch (error) {
+    console.error('Error loading data from Supabase:', error);
+    // Fallback to localStorage if Supabase fails
+    unpaidBills = loadFromStorage(STORAGE_KEYS.unpaid);
+    vendorCustomers = loadFromStorage(STORAGE_KEYS.vendor);
+    deletedCustomers = loadFromStorage(STORAGE_KEYS.deleted);
+  }
+}
+
+// Load payments and credits for all customers
+async function loadPaymentsAndCredits() {
+  try {
+    // Load all customers with their payments and credits
+    const allCustomers = [...unpaidBills, ...vendorCustomers];
+    
+    for (const customer of allCustomers) {
+      // Load payments
+      const { data: payments, error: paymentError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('timestamp', { ascending: false });
+      
+      if (!paymentError) {
+        customer.payments = payments || [];
+      }
+      
+      // Load credits
+      const { data: credits, error: creditError } = await supabase
+        .from('credits')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('timestamp', { ascending: false });
+      
+      if (!creditError) {
+        customer.credits = credits || [];
+      }
+    }
+  } catch (error) {
+    console.error('Error loading payments and credits:', error);
+  }
 }
 
 // ── AUTHENTICATION ──
@@ -1480,11 +1846,15 @@ function createAccount() {
 }
 
 // ── INIT ──
-function init() {
+async function init() {
+  // Initialize Supabase first
+  initializeSupabase();
+
   // Initialize Socket.IO connection first
   initializeSocket();
   
-  loadAll();
+  // Load data from Supabase
+  await loadAll();
   
   // Fix any existing duplicate IDs
   const fixedCount = fixDuplicateIds();
@@ -1790,8 +2160,13 @@ async function saveCustomer(){
       const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
       const index = list.findIndex(c => c.id === currentId);
       if(index !== -1) {
-        list[index] = { ...list[index], name, number, amount };
-        saveToStorage(STORAGE_KEYS[currentList], list);
+        const updatedCustomer = { ...list[index], name, number, amount };
+        
+        // Save to Supabase
+        await saveCustomerToSupabase(updatedCustomer, currentList, currentUser?.id);
+        
+        // Update local array
+        list[index] = updatedCustomer;
         renderAll();
         notify('Customer updated!');
       }
@@ -1815,9 +2190,11 @@ async function saveCustomer(){
         createdAt: ts()
       };
       
+      // Save to Supabase
+      await saveCustomerToSupabase(newCust, 'unpaid', currentUser?.id);
+      
       // Add new customer at the beginning of the array (upper area on the line)
       unpaidBills.unshift(newCust);
-      saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
       renderAll();
       notify('Customer added!');
     }
@@ -3530,20 +3907,17 @@ function printSummaryReport() {
         .card { page-break-inside: avoid; }
         .grid { page-break-inside: avoid; }
         body::before {
-          content: '';
+          content: ' Unpaid Bills Manager';
           position: fixed;
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          width: 500px;
-          height: 500px;
-          background-image: url('icon.png');
-          background-size: contain;
-          background-repeat: no-repeat;
-          background-position: center;
+          font-size: 72px;
           opacity: 0.1;
           pointer-events: none;
           z-index: 999;
+          font-family: 'Playfair Display', serif;
+          color: var(--accent);
         }
       }
     </style></head><body>
@@ -3687,5 +4061,20 @@ async function resetAllData() {
   }
 }
 </script>
+
+<!-- Simple test to verify JavaScript execution -->
+<script>
+try {
+  console.log('JavaScript execution test - page loaded successfully');
+  window.simpleTest = function() {
+    console.log('simpleTest function works!');
+    return true;
+  };
+  console.log('simpleTest function created successfully');
+} catch(e) {
+  console.error('Error in test script:', e);
+}
+</script>
+
 </body>
 </html>
