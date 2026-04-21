@@ -1,0 +1,3691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unpaid Bills Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root{
+  --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
+  --border:#cbd5e1;--accent:#ea580c;--accent2:#f97316;
+  --success:#16a34a;--danger:#dc2626;--warning:#d97706;
+  --blue:#2563eb;--purple:#9333ea;
+  --text:#1e293b;--sub:#64748b;--muted:#94a3b8;
+  --radius:14px;--shadow:0 8px 32px rgba(0,0,0,.1);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{background:var(--bg);min-height:100%;}
+body{font-family:'Source Sans 3',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;position:relative;z-index:2;}
+input,select,textarea{font-family:'Source Sans 3',sans-serif;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--surface);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+/* ── LOGIN ── */
+#loginOverlay{
+  position:fixed;inset:0;background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);
+  display:flex;align-items:center;justify-content:center;z-index:9999;
+}
+.loginBox{
+  background:var(--card);border:1px solid var(--border);border-radius:24px;
+  padding:48px 40px;width:360px;text-align:center;
+  box-shadow:0 24px 80px rgba(0,0,0,.15);
+  animation:popIn .4s cubic-bezier(.34,1.56,.64,1);
+}
+.loginBox .logo{font-family:'Playfair Display',serif;font-size:26px;color:var(--accent);margin-bottom:6px;letter-spacing:1px;}
+.loginBox .sub{font-size:13px;color:var(--sub);margin-bottom:32px;}
+.loginBox input{
+  width:100%;padding:12px 16px;margin-bottom:14px;
+  background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+  color:var(--text);font-size:15px;transition:.2s;
+}
+.loginBox input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(234,88,12,.15);}
+.loginBox .loginBtn{
+  width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;border-radius:10px;color:#111;font-weight:700;font-size:15px;
+  cursor:pointer;letter-spacing:.5px;transition:.2s;margin-top:4px;
+}
+.loginBox .loginBtn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(234,88,12,.4);}
+.loginErr{color:var(--danger);font-size:13px;margin-top:10px;display:none;background:rgba(239,68,68,.1);padding:8px;border-radius:8px;}
+.loginLinks{margin-top:20px;font-size:13px;}
+.loginLinks a{color:var(--accent);text-decoration:none;cursor:pointer;}
+.loginLinks a:hover{text-decoration:underline;}
+
+/* ── HEADER ── */
+header{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:14px 24px;display:flex;align-items:center;gap:16px;
+  position:sticky;top:0;z-index:100;
+}
+.headerTitle{font-family:'Playfair Display',serif;font-size:22px;color:var(--accent);letter-spacing:.5px;}
+.headerDate{font-size:13px;color:var(--sub);margin-left:4px;background:var(--card);padding:4px 10px;border-radius:20px;}
+.headerSpacer{flex:1;}
+.headerSearch{
+  background:var(--card);border:1.5px solid var(--border);border-radius:10px;
+  padding:9px 14px;color:var(--text);font-size:14px;width:240px;transition:.2s;
+}
+.headerSearch:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(234,88,12,.15);}
+.headerSearch::placeholder{color:var(--muted);}
+.iconBtn{
+  width:38px;height:38px;border-radius:50%;border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.2s;font-size:18px;
+}
+.iconBtn:hover{transform:scale(1.08);}
+.gearBtn{background:var(--card);color:var(--sub);}
+.gearBtn:hover{color:var(--accent);}
+.addBtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#111;font-weight:700;font-size:22px;box-shadow:0 4px 16px rgba(234,88,12,.35);}
+.addBtn:hover{box-shadow:0 6px 24px rgba(234,88,12,.5);}
+
+/* ── LAYOUT ── */
+.main{display:grid;grid-template-columns:1fr 1fr;gap:0;height:calc(100vh - 66px);}
+.panel{display:flex;flex-direction:column;border-right:1px solid var(--border);}
+.panel:last-child{border-right:none;}
+.panelHead{
+  padding:16px 20px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--border);background:var(--surface);
+}
+.panelTitle{font-family:'Playfair Display',serif;font-size:16px;font-weight:600;}
+.panelCount{
+  background:var(--border);color:var(--sub);font-size:12px;
+  padding:2px 8px;border-radius:20px;font-weight:600;
+}
+.panelTotal{
+  margin-left:auto;font-family:'Courier Prime',monospace;font-size:18px;
+  color:var(--accent);font-weight:700;
+}
+.panelList{flex:1;overflow-y:auto;padding:14px;}
+.emptyState{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;color:var(--muted);text-align:center;gap:10px;padding:40px;
+}
+.emptyState .emptyIcon{font-size:48px;opacity:.4;}
+.emptyState p{font-size:14px;}
+
+/* ── CUSTOMER CARD ── */
+.card{
+  background:linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);border:1px solid var(--border);border-radius:var(--radius);
+  padding:8px 12px;margin-bottom:6px;cursor:pointer;position:relative;
+  transition:all .2s;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);
+}
+.card::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--accent);transition:width .2s;
+}
+.card.partial::before{background:var(--warning);}
+.card.paid::before{background:var(--success);}
+.card.zero-balance{
+  background:linear-gradient(135deg, #f8f8f8 0%, #e8e8e8 100%);
+  border:1px solid #ccc;
+  filter:grayscale(100%);
+  box-shadow:0 4px 15px rgba(0,0,0,0.3);
+  position:relative;
+}
+.card.zero-balance::before{
+  background:#666;
+  width:4px;
+}
+.card.zero-balance:hover{
+  background:linear-gradient(135deg, #f0f0f0 0%, #d0d0d0 100%);
+  border-color:#999;
+  transform:translateY(-2px);
+  box-shadow:0 8px 25px rgba(0,0,0,0.4);
+}
+.card.zero-balance .cardName{color:#333;}
+.card.zero-balance .cardNum{color:#666;background:#f0f0f0;}
+.card.zero-balance .cardBal{color:#222;}
+.card.zero-balance .badge{background:rgba(128,128,128,.2);color:#666;}
+.card.zero-balance .cardDate{color:#888;}
+.card:hover{background:linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.15);}
+.card:hover::before{width:5px;}
+.cardTop{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}
+.cardName{font-size:16px;font-weight:600;color:var(--text);line-height:1.1;background:rgba(255,255,255,0.7);padding:3px 6px;border-radius:4px;margin-bottom:1px;}
+.cardNum{font-size:8px;color:var(--sub);background:var(--surface);padding:1px 4px;border-radius:8px;display:inline-block;}
+.cardRight{text-align:right;flex-shrink:0;margin-left:12px;}
+.cardBalLabel{font-size:9px;color:var(--sub);text-transform:uppercase;letter-spacing:.3px;}
+.cardBal{font-family:'Courier Prime',monospace;font-size:18px;font-weight:700;color:var(--text);line-height:1.1;}
+.cardBal.red{color:var(--danger);}
+.cardBal.yellow{color:var(--warning);}
+.cardBal.green{color:var(--success);}
+.cardBottom{display:flex;align-items:center;justify-content:space-between;margin-top:2px;gap:4px;}
+.badge{font-size:7px;padding:1px 4px;border-radius:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1px;}
+.badge.unpaid{background:rgba(239,68,68,.15);color:var(--danger);}
+.badge.partial{background:rgba(245,158,11,.15);color:var(--warning);}
+.badge.paid{background:rgba(16,185,129,.15);color:var(--success);}
+.cardDate{font-size:7px;color:var(--muted);}
+.delBtn{
+  position:absolute;top:8px;right:8px;width:22px;height:22px;
+  background:rgba(239,68,68,.15);color:var(--danger);border:none;border-radius:50%;
+  cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:.2s;
+}
+.card:hover .delBtn{opacity:1;}
+.delBtn:hover{background:var(--danger);color:#fff;transform:scale(1.1);}
+
+/* ── MODALS ── */
+.overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center;
+}
+#confirmModal {
+  z-index: 20000;
+}
+#createAccountModal {
+  z-index: 10000;
+}
+.overlay.show{display:flex;}
+.modal{
+  background:var(--card);border:1px solid var(--border);border-radius:20px;
+  width:90%;max-width:320px;max-height:90vh;overflow-y:auto;
+  box-shadow:var(--shadow);animation:popIn .3s cubic-bezier(.34,1.56,.64,1);
+}
+.modal.wide{max-width:400px;}
+.modalHead{
+  background:linear-gradient(135deg,var(--surface),var(--card2));
+  padding:16px 20px;border-radius:20px 20px 0 0;
+  display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:10;
+}
+.modalHead h3{font-family:'Playfair Display',serif;font-size:16px;font-weight:600;flex:1;}
+.modalClose{background:none;border:none;color:var(--sub);font-size:20px;cursor:pointer;padding:0;line-height:1;transition:.2s;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.modalClose:hover{color:var(--danger);background:rgba(239,68,68,.1);transform:scale(1.1);}
+.modalBody{padding:18px;}
+.formRow{margin-bottom:14px;}
+.formRow label{display:block;font-size:11px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.formRow input,.formRow select{
+  width:100%;padding:10px 12px;background:var(--surface);border:1.5px solid var(--border);
+  border-radius:8px;color:var(--text);font-size:13px;transition:.2s;
+}
+.formRow input:focus,.formRow select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(234,88,12,.15);}
+.formRow select option{background:var(--card);}
+.formRow .hint{font-size:10px;color:var(--muted);margin-top:3px;}
+.modalFoot{
+  padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;
+  background:var(--surface);border-radius:0 0 20px 20px;
+  position:sticky;bottom:0;
+}
+.btn{
+  padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
+  transition:.2s;letter-spacing:.3px;
+}
+.btn:hover{transform:translateY(-1px);}
+.btnPrimary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#111;}
+.btnPrimary:hover{box-shadow:0 4px 16px rgba(234,88,12,.4);}
+.btnSuccess{background:linear-gradient(135deg,var(--success),#34d399);color:#fff;}
+.btnSuccess:hover{box-shadow:0 4px 16px rgba(22,163,74,.4);}
+.btnDanger{background:linear-gradient(135deg,var(--danger),#f87171);color:#fff;}
+.btnDanger:hover{box-shadow:0 4px 16px rgba(220,38,38,.4);}
+.btnGhost{background:var(--card2);color:var(--sub);}
+.btnGhost:hover{color:var(--text);}
+.btnAuto{margin-right:auto!important;}
+
+/* ── CUSTOMER INFO BLOCK ── */
+.custBlock{
+  background:var(--surface);border-radius:12px;padding:12px 14px;
+  display:flex;align-items:center;gap:10px;margin-bottom:14px;
+  border:1px solid var(--border);
+}
+.custName{font-size:15px;font-weight:700;color:var(--text);}
+.custNum{font-size:11px;color:var(--sub);margin-top:2px;}
+.custBal{margin-left:auto;text-align:right;}
+.custBalLabel{font-size:9px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;}
+.custBalAmt{font-family:'Courier Prime',monospace;font-size:18px;font-weight:700;}
+.custBalAmt.red{color:var(--danger);}
+.custBalAmt.yellow{color:var(--warning);}
+.custBalAmt.green{color:var(--success);}
+
+/* ── AMOUNT DISPLAY ROW ── */
+.amtRow{
+  display:flex;align-items:center;gap:8px;background:var(--surface);
+  border-radius:8px;padding:10px 12px;border:1px solid var(--border);margin-bottom:12px;
+}
+.amtRowLabel{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;}
+.amtRowValue{font-family:'Courier Prime',monospace;font-size:16px;font-weight:700;color:var(--text);flex:1;}
+.amtAddBtn{
+  width:28px;height:28px;background:rgba(16,185,129,.2);color:var(--success);
+  border:1px solid var(--success);border-radius:50%;cursor:pointer;font-size:16px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0;
+}
+.amtAddBtn:hover{background:var(--success);color:#fff;transform:scale(1.08);}
+
+/* ── REMAINING DISPLAY ── */
+.remBox{
+  background:rgba(232,160,32,.08);border:1px solid rgba(232,160,32,.25);
+  border-radius:8px;padding:8px 12px;text-align:center;margin-bottom:10px;
+}
+.remBox .remLabel{font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;}
+.remBox .remAmt{font-family:'Courier Prime',monospace;font-size:18px;font-weight:700;color:var(--accent);}
+
+/* ── HISTORY ── */
+.histContainer{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.histSection{display:flex;flex-direction:column;}
+.histHeader{
+  padding:6px;text-align:center;font-size:11px;font-weight:700;
+  color:var(--accent);background:var(--surface);border:1px solid var(--border);
+  border-radius:6px 6px 0 0;text-transform:uppercase;letter-spacing:.5px;
+}
+.histPane{display:block;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;}
+.histItem{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding:4px 6px;margin-bottom:2px;border-radius:4px;font-size:11px;
+  line-height:1.3;
+}
+.histItem.credit{background:rgba(16,185,129,.08);border-left:3px solid var(--success);}
+.histItem.credit.notArrived{background:rgba(245,158,11,.08);border-left-color:var(--warning);}
+.histItem.payment{background:rgba(96,165,250,.08);border-left:3px solid var(--blue);}
+.histAmt{font-family:'Courier Prime',monospace;font-weight:700;font-size:11px;}
+.histAmt.credit{color:var(--success);}
+.histAmt.notArrived{color:var(--warning);}
+.histAmt.payment{color:var(--blue);}
+.histMeta{font-size:9px;color:var(--muted);margin-top:1px;}
+.noHist{text-align:center;color:var(--muted);font-size:11px;padding:15px;font-style:italic;}
+
+/* ── SETTINGS MODAL ── */
+.settingSection{margin-bottom:24px;}
+.settingSection h4{
+  font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;
+  padding-bottom:8px;border-bottom:2px solid var(--accent);font-weight:700;
+  display:flex;align-items:center;gap:8px;
+}
+.settingSection h4::before{
+  content:'';width:8px;height:8px;background:var(--accent);border-radius:50%;display:inline-block;
+}
+.settingBtn{
+  width:100%;padding:12px 16px;background:var(--surface);border:1.5px solid var(--border);
+  border-radius:12px;color:var(--text);font-size:14px;cursor:pointer;text-align:left;
+  margin-bottom:10px;transition:.3s;display:flex;align-items:center;gap:12px;font-weight:500;
+  position:relative;overflow:hidden;}
+.settingBtn::before{
+  content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(234,88,12,.1),transparent);
+  transition:left .5s;}
+.settingBtn:hover{
+  border-color:var(--accent);color:var(--accent);transform:translateX(4px);box-shadow:0 4px 12px rgba(234,88,12,.2);
+}
+.settingBtn:hover::before{left:100%;}
+.settingBtn.danger{
+  color:var(--danger);border-color:rgba(239,68,68,.3);}
+.settingBtn.danger:hover{
+  background:rgba(239,68,68,.05);border-color:var(--danger);box-shadow:0 4px 12px rgba(239,68,68,.2);
+}
+.settingBtn .icon{
+  font-size:18px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#111;border-radius:8px;
+  flex-shrink:0;}
+.settingBtn.danger .icon{
+  background:linear-gradient(135deg,var(--danger),#f87171);color:#fff;}
+.settingBtn .text{
+  flex:1;font-weight:600;}
+.settingBtn .desc{
+  font-size:11px;color:var(--sub);margin-top:2px;}
+
+/* ── USER LIST ── */
+.userItem{
+  display:flex;align-items:center;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;margin-bottom:8px;gap:10px;
+}
+.userItemInfo{flex:1;}
+.userItemName{font-size:14px;font-weight:600;}
+.userItemSub{font-size:12px;color:var(--sub);}
+.userItemActions{display:flex;gap:6px;}
+.btnXs{padding:5px 10px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:.2s;}
+.btnXs.edit{background:rgba(96,165,250,.15);color:var(--blue);}
+.btnXs.edit:hover{background:var(--blue);color:#fff;}
+.btnXs.del{background:rgba(239,68,68,.15);color:var(--danger);}
+.btnXs.del:hover{background:var(--danger);color:#fff;}
+
+/* ── RECYCLE BIN ── */
+.deletedCard{
+  background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);
+  border-radius:10px;padding:12px 14px;margin-bottom:8px;
+  display:flex;align-items:center;gap:10px;
+}
+.deletedInfo{flex:1;}
+.deletedName{font-size:14px;font-weight:600;color:var(--text);}
+.deletedMeta{font-size:12px;color:var(--sub);}
+.deletedActions{display:flex;gap:6px;align-items:center;}
+.restoreBtn{padding:6px 12px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;background:rgba(16,185,129,.15);color:var(--success);transition:.2s;}
+.restoreBtn:hover{background:var(--success);color:#fff;}
+
+/* ── CONFIRM MODAL ── */
+.confirmMsg{padding:24px 20px;text-align:center;font-size:15px;line-height:1.5;}
+.confirmIcon{font-size:40px;display:block;margin-bottom:10px;}
+
+/* ── NOTIFICATION ── */
+#notification{
+  position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:12px;
+  font-size:14px;font-weight:600;z-index:9998;display:none;
+  box-shadow:0 8px 32px rgba(0,0,0,.15);animation:slideUp .3s ease;max-width:300px;
+}
+#notification.success{background:var(--success);color:#fff;}
+#notification.error{background:var(--danger);color:#fff;}
+#notification.info{background:var(--blue);color:#fff;}
+#notification.warning{background:var(--warning);color:#111;}
+
+/* ── TOGGLE LOCATION ── */
+.toggleLocBtn{
+  padding:4px 8px;background:rgba(167,139,250,.15);color:var(--purple);
+  border:1px solid rgba(167,139,250,.3);border-radius:16px;
+  font-size:10px;font-weight:700;cursor:pointer;transition:.2s;margin-left:auto;
+  letter-spacing:.5px;text-transform:uppercase;
+}
+.toggleLocBtn:hover{background:var(--purple);color:#fff;}
+
+/* ── AUTOCOMPLETE SUGGESTIONS ── */
+.suggestion-item{
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--card);
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.suggestion-item:last-child{
+  border-bottom: none;
+}
+.suggestion-item:hover{
+  background: var(--card2);
+  color: var(--accent);
+}
+.suggestion-item.selected{
+  background: var(--accent);
+  color: #fff;
+}
+.suggestion-item .suggestion-text{
+  flex: 1;
+}
+.suggestion-item .suggestion-count{
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--card);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.suggestion-item.selected .suggestion-count{
+  background: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+}
+
+/* ── ANIMATIONS ── */
+@keyframes popIn{from{opacity:0;transform:scale(.9)translateY(10px)}to{opacity:1;transform:scale(1)translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+/* ---- PRINT ---- */
+@media print{
+  /* Hide all main application elements */
+  #notification,header,.delBtn,.toggleLocBtn,.main,.panel,.panelHead,.panelList{display:none!important;}
+  .overlay:not(.statement-modal){display:none!important;}
+  
+  /* Hide everything except the statement modal */
+  body > *:not(.statement-modal) {
+    display: none !important;
+  }
+  
+  /* Show only the statement modal and make it full screen */
+  .statement-modal {
+    display: flex !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: white !important;
+    z-index: 9999 !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 20px !important;
+    box-sizing: border-box !important;
+  }
+  
+  .statement-modal > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+  
+  .statement-modal .statement-modal-header {
+    display: none !important; /* Hide modal header in print */
+  }
+  
+  .statement-modal .statement-modal-footer {
+    display: none !important; /* Hide modal footer in print */
+  }
+  
+  .statement-modal > div > div[style*="overflow-y: auto"] {
+    padding: 0 !important;
+    background: white !important;
+  }
+  
+  /* Ensure statement content takes full width */
+  #statementContent {
+    width: 100% !important;
+    background: white !important;
+    padding: 20px !important;
+  }
+  
+  /* Remove watermark in print */
+  body::before {
+    display: none !important;
+  }
+  
+  /* Ensure proper print colors */
+  * {
+    color: black !important;
+    background: white !important;
+  }
+  
+  /* Keep some accent colors for readability */
+  .header h1, .section-title {
+    color: #ea580c !important;
+  }
+  
+  .credit-amount {
+    color: #16a34a !important;
+  }
+  
+  .payment-amount {
+    color: #2563eb !important;
+  }
+  
+  .status-arrived {
+    background: rgba(16,185,129,.15) !important;
+    color: #16a34a !important;
+  }
+  
+  .status-not-arrived {
+    background: rgba(245,158,11,.15) !important;
+    color: #d97706 !important;
+  }
+}
+
+/* ── WATERMARK ── */
+body::before {
+  content: '';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  height: 300px;
+  background-image: url('icon.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.05;
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* ── MOBILE ── */
+@media(max-width:768px){
+  .main{grid-template-columns:1fr;height:calc(100vh - 60px);}
+  .panel:first-child{border-right:none;border-bottom:1px solid var(--border);max-height:50vh;}
+  .header{padding:10px 16px;flex-wrap:wrap;gap:8px;}
+  .headerTitle{font-size:18px;}
+  .headerDate{font-size:11px;padding:3px 8px;}
+  .headerSearch{width:120px;font-size:13px;padding:7px 10px;}
+  .iconBtn{width:34px;height:34px;font-size:16px;}
+  .loginBox{width:320px;padding:32px 24px;}
+  .loginBox .logo{font-size:22px;}
+  .modal{width:95%;max-width:340px;}
+  .modal.wide{max-width:360px;}
+  .card{padding:12px 14px;}
+  .cardName{font-size:8px;display:inline-block;margin-bottom:1px;}
+  .cardBal{font-size:16px;}
+  .custBlock{padding:10px 12px;}
+  .custBalAmt{font-size:16px;}
+  body::before{width:200px;height:200px;}
+  .histContainer{grid-template-columns:1fr;gap:8px;}
+  .histPane{max-height:120px;}
+}
+
+@media(max-width:480px){
+  .header{padding:8px 12px;}
+  .headerTitle{font-size:16px;}
+  .headerDate{display:none;}
+  .headerSearch{width:100px;font-size:12px;padding:6px 8px;}
+  .iconBtn{width:30px;height:30px;font-size:14px;}
+  .main{height:calc(100vh - 54px);}
+  .panelHead{padding:12px 16px;}
+  .panelTitle{font-size:14px;}
+  .panelTotal{font-size:16px;}
+  .panelList{padding:10px;}
+  .loginBox{width:280px;padding:24px 20px;}
+  .loginBox .logo{font-size:20px;}
+  .loginBox input{padding:10px 12px;font-size:14px;}
+  .loginBox .loginBtn{padding:11px;font-size:14px;}
+  .modal{width:98%;max-width:300px;border-radius:16px;}
+  .modal.wide{max-width:320px;}
+  .modalHead{padding:10px 12px;}
+  .modalHead h3{font-size:12px;}
+  .modalBody{padding:12px;}
+  .modalFoot{padding:8px 12px;}
+  .btn{padding:5px 10px;font-size:11px;}
+  .card{padding:3px 4px;}
+  .cardName{font-size:6px;display:inline-block;margin-bottom:1px;}
+  .cardBal{font-size:12px;}
+  .custBlock{padding:6px 8px;}
+  .custName{font-size:6px;}
+  .custBalAmt{font-size:12px;}
+  .formRow label{font-size:10px;}
+  .formRow input,.formRow select{padding:8px 10px;font-size:12px;}
+  .histContainer{gap:6px;}
+  .histHeader{font-size:10px;padding:5px;}
+  .histPane{max-height:100px;}
+  .histItem{padding:3px 5px;font-size:10px;}
+  .delBtn{width:20px;height:20px;font-size:12px;}
+  body::before{width:150px;height:150px;}
+}
+
+@media(max-width:360px){
+  .header{padding:6px 8px;}
+  .headerTitle{font-size:14px;}
+  .headerSearch{width:80px;font-size:11px;padding:5px 6px;}
+  .iconBtn{width:28px;height:28px;font-size:12px;}
+  .addBtn{font-size:18px;}
+  .panelHead{padding:10px 12px;}
+  .panelTitle{font-size:12px;}
+  .panelTotal{font-size:14px;}
+  .loginBox{width:260px;padding:20px 16px;}
+  .loginBox .logo{font-size:18px;}
+  .modal{width:98%;max-width:280px;}
+  .modalHead{padding:10px 12px;}
+  .modalHead h3{font-size:12px;}
+  .modalBody{padding:12px;}
+  .modalFoot{padding:8px 12px;}
+  .btn{padding:5px 10px;font-size:11px;}
+  .card{padding:3px 4px;}
+  .cardName{font-size:6px;display:inline-block;margin-bottom:1px;}
+  .cardBal{font-size:12px;}
+  .custBlock{padding:6px 8px;}
+  .custName{font-size:6px;}
+  .custBalAmt{font-size:12px;}
+  .formRow input,.formRow select{padding:6px 8px;font-size:11px;}
+  .histHeader{font-size:9px;padding:4px;}
+  .histPane{max-height:80px;}
+  .histItem{padding:2px 4px;font-size:9px;}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ LOGIN ══════════════ -->
+<div id="loginOverlay">
+  <div class="loginBox">
+    <div class="logo">📒 Unpaid Bills</div>
+    <div class="sub">Sign in to continue</div>
+    <input type="text" id="loginUser" placeholder="Username" autocomplete="username">
+    <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password">
+    <button class="loginBtn" onclick="doLogin()">LOGIN</button>
+    <div id="loginErr" class="loginErr"></div>
+    <div class="loginLinks">
+      <a onclick="showCreateAccount()">Create Account</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ CREATE ACCOUNT ══════════════ -->
+<div class="overlay" id="createAccountModal">
+  <div class="modal">
+    <div class="modalHead">
+      <h3>Create New Account</h3>
+      <button class="modalClose" onclick="closeCreateAccount()">×</button>
+    </div>
+    <div class="modalBody">
+      <div class="formRow"><label>Full Name *</label><input type="text" id="caFullName" placeholder="Full name"></div>
+      <div class="formRow"><label>Username *</label><input type="text" id="caUsername" placeholder="Username"></div>
+      <div class="formRow"><label>Password *</label><input type="password" id="caPassword" placeholder="Password"></div>
+      <div class="formRow"><label>Confirm Password *</label><input type="password" id="caConfirmPassword" placeholder="Confirm password"></div>
+    </div>
+    <div class="modalFoot">
+      <button class="btn btnGhost" onclick="closeCreateAccount()">Cancel</button>
+      <button class="btn btnPrimary" onclick="createAccount()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ HEADER ══════════════ -->
+<header>
+  <div class="headerTitle">📒 Unpaid Bills</div>
+  <div class="headerDate" id="headerDate"></div>
+  <div class="headerSpacer"></div>
+  <input type="text" class="headerSearch" id="searchInput" placeholder="🔍  Search customer…" oninput="filterCards()">
+  <button class="iconBtn gearBtn" onclick="openSummaryReport()" title="Summary Report">📊</button>
+  <button class="iconBtn gearBtn" onclick="openSettings()" title="Settings">⚙️</button>
+  <button class="iconBtn addBtn" onclick="openAddCustomer()" title="Add Customer">+</button>
+</header>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<div class="main">
+  <!-- Unpaid Bills Panel -->
+  <div class="panel">
+    <div class="panelHead">
+      <span style="font-size:18px">🔴</span>
+      <span class="panelTitle" style="color:#ef4444">Unpaid Bills</span>
+      <span class="panelCount" id="unpaidCount">0</span>
+      <span class="panelTotal" id="unpaidTotal">0.00</span>
+    </div>
+    <div class="panelList" id="unpaidList"></div>
+  </div>
+  <!-- Vendor Details Panel -->
+  <div class="panel">
+    <div class="panelHead">
+      <span style="font-size:18px">📗</span>
+      <span class="panelTitle" style="color:#10b981">Vendor Details</span>
+      <span class="panelCount" id="vendorCount">0</span>
+      <span class="panelTotal" id="vendorTotal">0.00</span>
+    </div>
+    <div class="panelList" id="vendorList"></div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD / EDIT CUSTOMER ══════════════ -->
+<div class="overlay" id="addModal">
+  <div class="modal">
+    <div class="modalHead">
+      <h3 id="addModalTitle">Add New Customer</h3>
+      <button class="modalClose" onclick="closeAddModal()">×</button>
+    </div>
+    <div class="modalBody">
+      <div class="formRow">
+        <label>Customer Name *</label>
+        <input type="text" id="fName" placeholder="Enter customer name">
+      </div>
+      <div class="formRow">
+        <label>Phone / Code</label>
+        <input type="text" id="fNumber" placeholder="Phone number or code">
+      </div>
+      <div class="formRow">
+        <label>Opening Balance *</label>
+        <input type="text" id="fAmount" placeholder="e.g.  500 + 200">
+        <div class="hint">You can type math: 500+200 = 700</div>
+      </div>
+    </div>
+    <div class="modalFoot">
+      <button class="btn btnDanger btnAuto" id="btnDeleteCust" onclick="deleteCurrentCustomer()" style="display:none">🗑 Delete</button>
+      <button class="btn btnGhost" onclick="closeAddModal()">Cancel</button>
+      <button class="btn btnPrimary" onclick="saveCustomer()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PAYMENT MODAL ══════════════ -->
+<div class="overlay" id="payModal">
+  <div class="modal wide">
+    <div class="modalHead">
+      <h3 id="payModalTitle">Manage Customer</h3>
+      <button class="toggleLocBtn" id="toggleLocBtn" onclick="toggleLocation()">⇄ Move</button>
+      <button class="modalClose" onclick="closePayModal()" style="margin-left:8px">×</button>
+    </div>
+    <div class="modalBody">
+      <!-- Customer summary -->
+      <div class="custBlock">
+        <div>
+          <div class="custName" id="payCustName"></div>
+          <div class="custNum" id="payCustNum"></div>
+        </div>
+        <div class="custBal">
+          <div class="custBalLabel">Remaining</div>
+          <div class="custBalAmt" id="payCustRem"></div>
+        </div>
+      </div>
+      <!-- Add credit button -->
+      <div style="text-align: right; margin-bottom: 12px;">
+        <button class="amtAddBtn" onclick="openCreditModal()" title="Add charge / credit">+</button>
+      </div>
+            <!-- Payment input -->
+      <div class="formRow">
+        <label>Payment Amount</label>
+        <input type="text" id="payAmt" placeholder="Enter amount (e.g. 500+200)" oninput="updatePaymentPreview()">
+      </div>
+      <div class="formRow">
+        <label>Payment Note (optional)</label>
+        <div style="position: relative;">
+          <input type="text" id="payNote" placeholder="e.g. Cash, Check #123" oninput="showPaymentNoteSuggestions()" onkeydown="handlePaymentNoteKeydown(event)">
+          <div id="payNoteSuggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border: 1.5px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; max-height: 150px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+        </div>
+      </div>
+      <!-- Remaining preview -->
+      <div class="remBox">
+        <div class="remLabel">Balance After Payment</div>
+        <div class="remAmt" id="remAfterPay">—</div>
+      </div>
+      <!-- History sections side by side -->
+      <div class="histContainer">
+        <div class="histSection">
+          <div class="histHeader">📥 Credits</div>
+          <div class="histPane active" id="paneCredits"></div>
+        </div>
+        <div class="histSection">
+          <div class="histHeader">💳 Payments</div>
+          <div class="histPane active" id="panePayments"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modalFoot">
+      <button class="btn btnDanger btnAuto" id="payDelBtn" onclick="deletePayCustomer()">🗑 Remove</button>
+      <button class="btn btnGhost" onclick="printCustomer()">🖨 Print</button>
+      <button class="btn btnGhost" onclick="closePayModal()">Close</button>
+      <button class="btn btnSuccess" onclick="recordPayment()">✔ Record Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ ADD CREDIT ══════════════ -->
+<div class="overlay" id="creditModal">
+  <div class="modal">
+    <div class="modalHead">
+      <h3>Add Charge / Credit</h3>
+      <button class="modalClose" onclick="closeCreditModal()">×</button>
+    </div>
+    <div class="modalBody">
+      <div class="formRow">
+        <label>Amount *</label>
+        <input type="text" id="crAmt" placeholder="e.g. 300+150">
+      </div>
+      <div class="formRow">
+        <label>Note</label>
+        <input type="text" id="crNote" placeholder="Description">
+      </div>
+      <div class="formRow">
+        <label>Status</label>
+        <select id="crStatus">
+          <option value="Arrived">Arrived ✅</option>
+          <option value="Not Arrived">Not Arrived ⏳</option>
+        </select>
+      </div>
+      <div class="formRow" style="display:flex;gap:10px">
+        <div style="flex:1">
+          <label>Date</label>
+          <input type="date" id="crDate">
+        </div>
+        <div style="flex:1">
+          <label>Time</label>
+          <input type="time" id="crTime">
+        </div>
+      </div>
+      
+      <!-- Credit History -->
+      <div style="margin-top: 16px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);">
+          📋 Recent Credits History
+        </div>
+        <div id="creditHistoryList" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);">
+          <!-- Credit history will be populated here -->
+        </div>
+      </div>
+    </div>
+    <div class="modalFoot">
+      <button class="btn btnGhost" onclick="closeCreditModal()">Cancel</button>
+      <button class="btn btnSuccess" onclick="saveCredit()">✔ Add Credit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ CONFIRM ══════════════ -->
+<div class="overlay" id="confirmModal">
+  <div class="modal" style="max-width:360px">
+    <div class="modalHead">
+      <h3>Confirm</h3>
+      <button class="modalClose" onclick="confirmResolve(false)">×</button>
+    </div>
+    <div class="confirmMsg"><span class="confirmIcon">⚠️</span><span id="confirmText"></span></div>
+    <div class="modalFoot">
+      <button class="btn btnGhost" onclick="confirmResolve(false)">Cancel</button>
+      <button class="btn btnDanger" onclick="confirmResolve(true)">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SUMMARY REPORT ══════════════ -->
+<div class="overlay" id="summaryModal">
+  <div class="modal wide" style="max-width: 800px;">
+    <div class="modalHead">
+      <h3>📊 Summary Report</h3>
+      <button class="modalClose" onclick="closeSummaryModal()">×</button>
+    </div>
+    <div class="modalBody">
+      <div id="summaryContent"></div>
+    </div>
+    <div class="modalFoot">
+      <button class="btn btnGhost" onclick="printSummaryReport()">🖨 Print</button>
+      <button class="btn btnGhost" onclick="closeSummaryModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ SETTINGS ══════════════ -->
+<div class="overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modalHead">
+      <h3>⚙️ Settings</h3>
+      <button class="modalClose" onclick="closeSettings()">×</button>
+    </div>
+    <div class="modalBody">
+      <div id="settingsBody"></div>
+    </div>
+    <div class="modalFoot">
+      <button class="btn btnGhost" onclick="closeSettings()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ RECYCLE BIN ══════════════ -->
+<div class="overlay" id="binModal">
+  <div class="modal">
+    <div class="modalHead"><h3>🗑 Recycle Bin</h3><button class="modalClose" onclick="closeBinModal()">×</button></div>
+    <div class="modalBody" id="binBody"></div>
+    <div class="modalFoot"><button class="btn btnGhost" onclick="closeBinModal()">Close</button></div>
+  </div>
+</div>
+
+<!-- Notification -->
+<div id="notification"></div>
+
+<!-- ══════════════ SCRIPT ══════════════ -->
+<script>
+// ── DATA ──
+let unpaidBills = [];
+let vendorCustomers = [];
+let deletedCustomers = [];
+let currentId = null;
+let currentList = null; // 'unpaid' | 'vendor'
+let confirmResolveFunc = null;
+let currentUser = null;
+
+// ── REAL-TIME SYNC ──
+let socket = null;
+let isServerMode = false;
+let syncInProgress = false;
+
+// Initialize Socket.IO connection
+function initializeSocket() {
+  try {
+    socket = io();
+    isServerMode = true;
+    
+    console.log('🔗 Connected to server for real-time sync');
+    
+    // Handle data sync from server
+    socket.on('dataSync', (data) => {
+      if (!syncInProgress) {
+        syncInProgress = true;
+        try {
+          const isServerDataEmpty = (!data.unpaidBills || data.unpaidBills.length === 0) && 
+                                    (!data.vendorCustomers || data.vendorCustomers.length === 0);
+          const isLocalDataPresent = unpaidBills.length > 0 || vendorCustomers.length > 0;
+
+          if (isServerDataEmpty && isLocalDataPresent) {
+            console.log('Server data is empty, but local data is present. Pushing local data to server.');
+            syncToServer();
+          } else {
+            // Update local data with server data
+            if (data.unpaidBills) { 
+              unpaidBills = data.unpaidBills; 
+              localStorage.setItem(STORAGE_KEYS.unpaid, JSON.stringify(unpaidBills));
+            }
+            if (data.vendorCustomers) {
+              vendorCustomers = data.vendorCustomers;
+              localStorage.setItem(STORAGE_KEYS.vendor, JSON.stringify(vendorCustomers));
+            }
+            if (data.deletedCustomers) {
+              deletedCustomers = data.deletedCustomers;
+              localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
+            }
+            if (data.users) {
+              const users = data.users;
+              localStorage.setItem(USERS_KEY, JSON.stringify(users));
+            }
+            
+            // Update UI
+            renderAll();
+            console.log('📊 Data synced from server');
+          }
+        } catch (error) {
+          console.error('❌ Error syncing data:', error);
+        } finally {
+          syncInProgress = false;
+        }
+      }
+    });
+    
+    // Handle errors
+    socket.on('error', (error) => {
+      console.error('❌ Socket error:', error);
+      notify('Connection error: ' + error, 'error');
+    });
+    
+    // Handle disconnection
+    socket.on('disconnect', () => {
+      console.log('🔌 Disconnected from server');
+      isServerMode = false;
+    });
+    
+    // Handle reconnection
+    socket.on('connect', () => {
+      console.log('🔗 Reconnected to server');
+      isServerMode = true;
+      // Immediately request latest state from server on connection
+      socket.emit('requestData');
+    });
+    
+  } catch (error) {
+    console.log('📱 Running in offline mode (no server)');
+    isServerMode = false;
+  }
+}
+
+// Send data to server for sync
+function syncToServer() {
+  if (isServerMode && socket && !syncInProgress) {
+    try {
+      const data = {
+        unpaidBills,
+        vendorCustomers,
+        deletedCustomers,
+        users: loadUsers()
+      };
+      socket.emit('updateData', data);
+      console.log('📤 Data synced to server');
+    } catch (error) {
+      console.error('❌ Error syncing to server:', error);
+    }
+  }
+}
+
+// ── USER MANAGEMENT ──
+const USERS_KEY = 'appUsers';
+const CURRENT_USER_KEY = 'currentUser';
+
+// Default admin user
+const DEFAULT_ADMIN = {
+  id: 'admin_default',
+  fullName: 'Administrator',
+  username: 'admin',
+  password: 'admin',
+  role: 'admin',
+  createdAt: Date.now()
+};
+
+
+// ── LOCAL STORAGE FUNCTIONS ──
+const STORAGE_KEYS = {
+  unpaid: 'unpaidBills',
+  vendor: 'vendorCustomers',
+  deleted: 'deletedCustomers'
+};
+
+function saveToStorage(key, data) {
+  try {
+    // Validate data before saving
+    if (data === null || data === undefined) {
+      console.error('Attempted to save null/undefined data for key:', key);
+      notify('Data validation error. Please try again.', 'error');
+      return false;
+    }
+    
+    // Create a backup before saving
+    const backupKey = key + '_backup';
+    const currentData = localStorage.getItem(key);
+    if (currentData) {
+      localStorage.setItem(backupKey, currentData);
+    }
+    
+    // Stringify and save to localStorage (for offline support)
+    const jsonString = JSON.stringify(data);
+    localStorage.setItem(key, jsonString);
+    
+    // Verify the save was successful
+    const verifyData = localStorage.getItem(key);
+    if (verifyData !== jsonString) {
+      throw new Error('Save verification failed');
+    }
+    
+    console.log('Successfully saved data for key:', key, 'Size:', jsonString.length, 'bytes');
+    
+    // Sync to server if in server mode
+    if (isServerMode) {
+      syncToServer();
+    }
+    
+    return true;
+    
+  } catch (error) {
+    console.error('Failed to save to localStorage:', error);
+    
+    // Attempt to restore from backup if available
+    const backupKey = key + '_backup';
+    const backupData = localStorage.getItem(backupKey);
+    if (backupData) {
+      try {
+        localStorage.setItem(key, backupData);
+        notify('Error occurred. Previous data restored.', 'warning');
+      } catch (restoreError) {
+        console.error('Failed to restore backup:', restoreError);
+        notify('Critical: Data could not be saved or restored. Please export your data immediately.', 'error');
+      }
+    } else {
+      if (error.name === 'QuotaExceededError') {
+        notify('Storage quota exceeded. Please backup and clear some data.', 'error');
+      } else {
+        notify('Failed to save data. Please try again.', 'error');
+      }
+    }
+    return false;
+  }
+}
+
+function loadFromStorage(key) {
+  try {
+    const data = localStorage.getItem(key);
+    if (!data) {
+      console.log('No data found for key:', key);
+      return [];
+    }
+    
+    // Parse and validate the data
+    const parsedData = JSON.parse(data);
+    
+    // Validate it's an array
+    if (!Array.isArray(parsedData)) {
+      console.error('Data for key', key, 'is not an array:', typeof parsedData);
+      // Try to restore from backup
+      const backupKey = key + '_backup';
+      const backupData = localStorage.getItem(backupKey);
+      if (backupData) {
+        console.log('Attempting to restore from backup for key:', key);
+        const backupParsed = JSON.parse(backupData);
+        if (Array.isArray(backupParsed)) {
+          localStorage.setItem(key, backupData);
+          return backupParsed;
+        }
+      }
+      return [];
+    }
+    
+    console.log('Successfully loaded data for key:', key, 'Items:', parsedData.length);
+    return parsedData;
+    
+  } catch (error) {
+    console.error('Failed to load from localStorage:', error);
+    
+    // Attempt to restore from backup
+    const backupKey = key + '_backup';
+    const backupData = localStorage.getItem(backupKey);
+    if (backupData) {
+      try {
+        console.log('Attempting to restore from backup for key:', key);
+        const backupParsed = JSON.parse(backupData);
+        if (Array.isArray(backupParsed)) {
+          localStorage.setItem(key, backupData);
+          notify('Data restored from backup due to corruption.', 'warning');
+          return backupParsed;
+        }
+      } catch (backupError) {
+        console.error('Backup data also corrupted:', backupError);
+      }
+    }
+    
+    notify('Data corruption detected. Some data may be lost.', 'error');
+    return [];
+  }
+}
+
+function loadUsers() {
+  try {
+    // If server is available, users will be loaded via Socket.IO sync
+    // For now, also check localStorage as backup
+    const localUsers = localStorage.getItem(USERS_KEY);
+    if (localUsers) {
+      const parsedUsers = JSON.parse(localUsers);
+      
+      // Ensure the default admin user always exists
+      const hasAdmin = parsedUsers.some(u => u.username.toLowerCase() === 'admin');
+      if (!hasAdmin) {
+        console.log('Admin user missing, adding default admin');
+        parsedUsers.push(DEFAULT_ADMIN);
+        localStorage.setItem(USERS_KEY, JSON.stringify(parsedUsers));
+        return parsedUsers;
+      }
+      
+      console.log('Users loaded from localStorage (server sync will update if available)');
+      return parsedUsers;
+    } else {
+      // Initialize with default admin user
+      console.log('No users found, initializing with default admin');
+      const defaultUsers = [DEFAULT_ADMIN];
+      localStorage.setItem(USERS_KEY, JSON.stringify(defaultUsers));
+      
+      // Send to server if available
+      if (isServerMode && socket) {
+        socket.emit('updateData', { users: defaultUsers });
+      }
+      
+      return defaultUsers;
+    }
+  } catch (error) {
+    console.error('Failed to load users:', error);
+    console.log('Resetting users to default admin due to error');
+    // Reset to default admin on error
+    const defaultUsers = [DEFAULT_ADMIN];
+    try {
+      localStorage.setItem(USERS_KEY, JSON.stringify(defaultUsers));
+      // Send to server if available
+      if (isServerMode && socket) {
+        socket.emit('updateData', { users: defaultUsers });
+      }
+    } catch (e) {
+      console.error('Failed to save default users:', e);
+    }
+    return defaultUsers;
+  }
+}
+
+function saveUsers(users) {
+  try {
+    console.log('Saving users:', users.map(u => ({ username: u.username, role: u.role })));
+    
+    // Try to save to server first (for permanent storage)
+    if (isServerMode && socket) {
+      socket.emit('updateData', { users });
+      console.log('Users sent to server for permanent storage');
+    } else {
+      console.log('Server not available, saving to localStorage only');
+    }
+    
+    // Also save to localStorage as backup
+    localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    console.log('Users saved to localStorage as backup');
+    
+    // Verify the save
+    const saved = localStorage.getItem(USERS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      console.log('Verification - users in localStorage:', parsed.length);
+    } else {
+      console.error('Failed to verify saved users - localStorage empty');
+    }
+  } catch (error) {
+    console.error('Failed to save users:', error);
+    notify('Failed to save user data. Please try again.', 'error');
+  }
+}
+
+// ── DATA INTEGRITY CHECK ──
+function validateDataIntegrity() {
+  console.log('🔍 Starting data integrity check...');
+  
+  const issues = [];
+  
+  // Check unpaid bills
+  try {
+    unpaidBills.forEach((customer, index) => {
+      if (!customer.id) {
+        issues.push(`Unpaid customer at index ${index} missing ID`);
+        return;
+      }
+      if (!customer.name) {
+        issues.push(`Unpaid customer ${customer.id} missing name`);
+      }
+      if (typeof customer.amount !== 'number' || isNaN(customer.amount)) {
+        issues.push(`Unpaid customer ${customer.id} has invalid amount: ${customer.amount}`);
+      }
+      if (customer.payments && !Array.isArray(customer.payments)) {
+        issues.push(`Unpaid customer ${customer.id} has invalid payments array`);
+      }
+      if (customer.credits && !Array.isArray(customer.credits)) {
+        issues.push(`Unpaid customer ${customer.id} has invalid credits array`);
+      }
+    });
+  } catch (error) {
+    issues.push(`Error validating unpaid bills: ${error.message}`);
+  }
+  
+  // Check vendor customers
+  try {
+    vendorCustomers.forEach((customer, index) => {
+      if (!customer.id) {
+        issues.push(`Vendor customer at index ${index} missing ID`);
+        return;
+      }
+      if (!customer.name) {
+        issues.push(`Vendor customer ${customer.id} missing name`);
+      }
+      if (typeof customer.amount !== 'number' || isNaN(customer.amount)) {
+        issues.push(`Vendor customer ${customer.id} has invalid amount: ${customer.amount}`);
+      }
+      if (customer.payments && !Array.isArray(customer.payments)) {
+        issues.push(`Vendor customer ${customer.id} has invalid payments array`);
+      }
+      if (customer.credits && !Array.isArray(customer.credits)) {
+        issues.push(`Vendor customer ${customer.id} has invalid credits array`);
+      }
+    });
+  } catch (error) {
+    issues.push(`Error validating vendor customers: ${error.message}`);
+  }
+  
+  // Check for duplicate IDs
+  const allIds = [...unpaidBills, ...vendorCustomers].map(c => c.id).filter(Boolean);
+  const duplicateIds = allIds.filter((id, index) => allIds.indexOf(id) !== index);
+  if (duplicateIds.length > 0) {
+    issues.push(`Duplicate customer IDs found: ${duplicateIds.join(', ')}`);
+  }
+  
+  if (issues.length > 0) {
+    console.warn('⚠️ Data integrity issues found:', issues);
+    notify(`Data integrity issues detected. Check console for details.`, 'warning');
+    return false;
+  } else {
+    console.log('✅ Data integrity check passed');
+    return true;
+  }
+}
+
+// ── DATA LOADING ──
+function loadAll() {
+  unpaidBills = loadFromStorage(STORAGE_KEYS.unpaid);
+  vendorCustomers = loadFromStorage(STORAGE_KEYS.vendor);
+  deletedCustomers = loadFromStorage(STORAGE_KEYS.deleted);
+}
+
+// ── AUTHENTICATION ──
+function getUser() { return currentUser; }
+function isAdmin() { return currentUser && currentUser.role === 'admin'; }
+
+function doLogin() {
+  const username = document.getElementById('loginUser').value.trim();
+  const password = document.getElementById('loginPass').value.trim(); // Trim to match stored password
+  
+  console.log('Login attempt:', { username, passwordLength: password.length, password: `"${password}"` });
+  
+  if (!username || !password) {
+    const el = document.getElementById('loginErr');
+    el.textContent = 'Please enter username and password';
+    el.style.display = 'block';
+    return;
+  }
+
+  let users = [];
+  try {
+    users = loadUsers();
+  } catch (error) {
+    console.error('Error loading users:', error);
+  }
+  
+  console.log('Available users:', users.map(u => ({ 
+    username: u.username, 
+    role: u.role, 
+    passwordLength: u.password.length,
+    password: `"${u.password}"`,
+    hasPassword: !!u.password
+  })));
+  
+  let user = users.find(u => u.username === username && u.password === password);
+  
+  // Fallback: if no users loaded and trying admin/admin, use default admin
+  if (!user && username === 'admin' && password === 'admin') {
+    console.log('Using fallback admin login');
+    user = DEFAULT_ADMIN;
+  }
+  
+  // Additional debugging for non-admin users
+  if (!user && username !== 'admin') {
+    console.log('Login failed for non-admin user. Checking user existence...');
+    const userExists = users.find(u => u.username === username);
+    if (userExists) {
+      console.log('User exists but password mismatch:', {
+        storedPassword: `"${userExists.password}"`,
+        providedPassword: `"${password}"`,
+        storedLength: userExists.password.length,
+        providedLength: password.length,
+        exactMatch: userExists.password === password,
+        trimmedMatch: userExists.password === password.trim(),
+        storedType: typeof userExists.password,
+        providedType: typeof password
+      });
+    } else {
+      console.log('User does not exist in system. Available usernames:', users.map(u => u.username));
+    }
+  }
+  
+  console.log('User found:', user ? { username: user.username, role: user.role } : null);
+  
+  if (user) {
+    currentUser = user;
+    // Store user with timestamp for session management
+    const sessionData = {
+      ...user,
+      loginTime: Date.now(),
+      lastActivity: Date.now()
+    };
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionData));
+    document.getElementById('loginOverlay').style.display = 'none';
+    console.log('Login successful, initializing app');
+    init();
+  } else {
+    const el = document.getElementById('loginErr');
+    el.textContent = 'Invalid username or password';
+    el.style.display = 'block';
+    console.log('Login failed: invalid credentials');
+  }
+}
+
+function logout() {
+  currentUser = null;
+  localStorage.removeItem(CURRENT_USER_KEY);
+  location.reload();
+}
+
+// Update session activity to keep session alive
+function updateSessionActivity() {
+  if (currentUser) {
+    try {
+      const storedSession = localStorage.getItem(CURRENT_USER_KEY);
+      if (storedSession) {
+        const sessionData = JSON.parse(storedSession);
+        sessionData.lastActivity = Date.now();
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionData));
+      }
+    } catch (error) {
+      console.error('Error updating session activity:', error);
+    }
+  }
+}
+
+// Set up periodic activity updates (every 5 minutes)
+setInterval(updateSessionActivity, 5 * 60 * 1000);
+
+function showCreateAccount() {
+  document.getElementById('createAccountModal').classList.add('show');
+}
+
+function closeCreateAccount() {
+  document.getElementById('createAccountModal').classList.remove('show');
+  // Clear form
+  document.getElementById('caFullName').value = '';
+  document.getElementById('caUsername').value = '';
+  document.getElementById('caPassword').value = '';
+  document.getElementById('caConfirmPassword').value = '';
+}
+
+function createAccount() {
+  const fullName = document.getElementById('caFullName').value.trim();
+  const username = document.getElementById('caUsername').value.trim();
+  const password = document.getElementById('caPassword').value;
+  const confirmPassword = document.getElementById('caConfirmPassword').value;
+  
+  console.log('Account creation attempt:', { fullName, username, passwordLength: password.length });
+  
+  if (!fullName || !username || !password) {
+    notify('Please fill all required fields', 'error');
+    return;
+  }
+  
+  if (password !== confirmPassword) {
+    notify('Passwords do not match', 'error');
+    return;
+  }
+  
+  const users = loadUsers();
+  console.log('Current users before creation:', users.map(u => ({ username: u.username, role: u.role })));
+  
+  // Check if username already exists
+  if (users.find(u => u.username === username)) {
+    notify('Username already exists', 'error');
+    console.log('Username already exists:', username);
+    return;
+  }
+  
+  const newUser = {
+    id: 'user_' + Date.now(),
+    fullName,
+    username,
+    password: password.trim(), // Ensure no trailing whitespace
+    role: 'user',
+    createdAt: Date.now()
+  };
+  
+  console.log('Creating new user:', { 
+    username: newUser.username, 
+    role: newUser.role, 
+    id: newUser.id,
+    passwordLength: newUser.password.length,
+    password: `"${newUser.password}"`
+  });
+  
+  users.push(newUser);
+  saveUsers(users);
+  
+  // Verify the user was saved
+  const verifyUsers = loadUsers();
+  const savedUser = verifyUsers.find(u => u.username === username);
+  console.log('User saved successfully:', !!savedUser);
+  
+  closeCreateAccount();
+  notify('Account created successfully! You can now login.');
+}
+
+// ── INIT ──
+function init() {
+  // Initialize Socket.IO connection first
+  initializeSocket();
+  
+  loadAll();
+  
+  // Fix any existing duplicate IDs
+  const fixedCount = fixDuplicateIds();
+  if (fixedCount > 0) {
+    console.log(`Fixed ${fixedCount} duplicate customer IDs during initialization`);
+  }
+  
+  // Run data integrity check
+  const integrityPassed = validateDataIntegrity();
+  if (!integrityPassed) {
+    console.warn('⚠️ Application starting with data integrity issues');
+  }
+  
+  renderAll();
+  document.getElementById('headerDate').textContent = new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  
+  // Connection status is now handled silently - no notifications needed
+}
+
+// ── HELPERS ──
+function evalFx(s){
+  if(!s) return 0;
+  try{ const c=String(s).replace(/[^0-9+\-*/.() ]/g,''); return Math.max(0, parseFloat(eval(c)||0)); }
+  catch{ return parseFloat(s)||0; }
+}
+
+function fmt(n){
+  n=parseFloat(n)||0;
+  return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function ts(){ return Date.now(); }
+function dateStr(){ return new Date().toLocaleDateString('en-GB'); }
+function isoDate(){ return new Date().toISOString().split('T')[0]; }
+function timeStr(){ return new Date().toTimeString().slice(0,5); }
+
+// Unique ID generator to prevent duplicates
+let idCounter = 0;
+function generateUniqueId() {
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 10000);
+  const counter = ++idCounter;
+  return `${timestamp}_${random}_${counter}`;
+}
+
+// Fix existing duplicate IDs
+function fixDuplicateIds() {
+  const allCustomers = [...unpaidBills, ...vendorCustomers];
+  const idMap = new Map();
+  const duplicates = [];
+  
+  allCustomers.forEach((customer, index) => {
+    if (idMap.has(customer.id)) {
+      duplicates.push({ customer, index, list: unpaidBills.includes(customer) ? 'unpaid' : 'vendor' });
+    } else {
+      idMap.set(customer.id, true);
+    }
+  });
+  
+  // Fix duplicates by assigning new IDs
+  duplicates.forEach(({ customer, index, list }) => {
+    const newId = generateUniqueId();
+    console.log(`Fixing duplicate ID ${customer.id} -> ${newId} for customer: ${customer.name}`);
+    customer.id = newId;
+  });
+  
+  // Save the fixed data
+  if (duplicates.length > 0) {
+    saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+    saveToStorage(STORAGE_KEYS.vendor, vendorCustomers);
+    console.log(`Fixed ${duplicates.length} duplicate customer IDs`);
+    notify(`Fixed ${duplicates.length} duplicate customer IDs`, 'success');
+  }
+  
+  return duplicates.length;
+}
+
+function notify(msg, type='success'){
+  const el=document.getElementById('notification');
+  el.textContent=msg; el.className=type; el.style.display='block';
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>el.style.display='none', 3200);
+}
+
+function customConfirm(msg){
+  return new Promise(res=>{
+    document.getElementById('confirmText').textContent=msg;
+    document.getElementById('confirmModal').classList.add('show');
+    confirmResolveFunc=res;
+  });
+}
+function confirmResolve(val){
+  document.getElementById('confirmModal').classList.remove('show');
+  if(confirmResolveFunc){ confirmResolveFunc(val); confirmResolveFunc=null; }
+}
+
+// ── RENDER ──
+function renderAll(){
+  renderList('unpaid');
+  renderList('vendor');
+}
+
+function getList(which){ return which==='unpaid' ? unpaidBills : vendorCustomers; }
+
+function remaining(cust){
+  const paid = (cust.payments||[]).reduce((s,p)=>s+p.amount,0);
+  return Math.max(0, cust.amount - paid);
+}
+
+function renderList(which){
+  const list=getList(which);
+  const containerId = which==='unpaid' ? 'unpaidList' : 'vendorList';
+  const container=document.getElementById(containerId);
+  const search=(document.getElementById('searchInput')?.value||'').toLowerCase();
+
+  // Filter
+  const filtered=list.filter(c=>{
+    if(!search) return true;
+    return (c.name||'').toLowerCase().includes(search)||(c.number||'').toLowerCase().includes(search);
+  });
+
+  // Sort: newest first (by createdAt), zero balance last
+  const sorted = filtered.sort((a, b) => {
+    const remA = remaining(a);
+    const remB = remaining(b);
+    
+    // Move zero balance customers to the end
+    if (remA === 0 && remB !== 0) return 1;
+    if (remA !== 0 && remB === 0) return -1;
+    
+    // For non-zero balance customers, sort by newest first (by createdAt timestamp)
+    const timeA = a.createdAt || 0;
+    const timeB = b.createdAt || 0;
+    return timeB - timeA; // Descending order (newest first)
+  });
+
+  container.innerHTML='';
+
+  if(sorted.length===0){
+    container.innerHTML=`<div class="emptyState"><div class="emptyIcon">${which==='unpaid'?'🔴':'📗'}</div><p>${search?'No results found':'No customers yet'}</p></div>`;
+  } else {
+    sorted.forEach(cust=>{
+      const rem=remaining(cust);
+      const paid=(cust.payments||[]).reduce((s,p)=>s+p.amount,0);
+      const pct=cust.amount>0?(paid/cust.amount)*100:0;
+      let statusClass=pct===0?'unpaid':(pct>=100?'paid':'partial');
+      let statusText=pct===0?'Unpaid':(pct>=100?'Paid':'Partial');
+      let balClass=pct===0?'red':(pct>=100?'green':'yellow');
+      
+      // Add zero-balance class if remaining balance is zero
+      if (rem === 0) {
+        statusClass += ' zero-balance';
+      }
+      
+      const createdDate=cust.createdAt?new Date(cust.createdAt).toLocaleDateString('en-GB'):'—';
+
+      const div=document.createElement('div');
+      div.className=`card ${statusClass}`;
+      div.setAttribute('data-id', cust.id);
+      div.setAttribute('data-list', which);
+      div.onclick=()=>openPayModal(cust.id, which);
+      div.innerHTML=`
+        <div class="cardTop">
+          <div>
+            <div class="cardName">${escHtml(cust.name)}</div>
+            ${cust.number?`<div class="cardNum">#${escHtml(cust.number)}</div>`:''}
+          </div>
+          <div class="cardRight">
+            <div class="cardBalLabel">Balance</div>
+            <div class="cardBal ${balClass}">${fmt(rem)}</div>
+          </div>
+        </div>
+        <div class="cardBottom">
+          <span class="badge ${statusClass}">${statusText}</span>
+          <span class="cardDate">Added: ${createdDate}</span>
+        </div>
+        <button class="delBtn" data-id="${cust.id}" data-which="${which}" title="Remove">×</button>
+      `;
+      
+      // Add delete button event listener separately
+      const delBtn = div.querySelector('.delBtn');
+      delBtn.addEventListener('click', (e) => {
+        console.log('Delete button clicked via addEventListener');
+        e.stopPropagation();
+        e.preventDefault();
+        quickDelete(cust.id, which);
+      });
+      
+      container.appendChild(div);
+    });
+  }
+
+  // Update totals
+  const total=list.reduce((s,c)=>s+remaining(c),0);
+  const countEl=document.getElementById(which==='unpaid'?'unpaidCount':'vendorCount');
+  const totalEl=document.getElementById(which==='unpaid'?'unpaidTotal':'vendorTotal');
+  if(countEl) countEl.textContent=list.length;
+  if(totalEl) totalEl.textContent=fmt(total);
+}
+
+function escHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function filterCards(){ renderAll(); }
+
+// ── ADD / EDIT CUSTOMER ──
+function openAddCustomer(){
+  currentId=null; currentList='unpaid';
+  document.getElementById('addModalTitle').textContent='Add New Customer';
+  document.getElementById('fName').value='';
+  document.getElementById('fNumber').value='';
+  document.getElementById('fAmount').value='';
+  document.getElementById('btnDeleteCust').style.display='none';
+  document.getElementById('addModal').classList.add('show');
+  setTimeout(()=>document.getElementById('fName').focus(),100);
+}
+
+function openEditCustomer(id, which){
+  const cust=getList(which).find(c=>c.id===id);
+  if(!cust) return;
+  currentId=id; currentList=which;
+  document.getElementById('addModalTitle').textContent='Edit Customer';
+  document.getElementById('fName').value=cust.name;
+  document.getElementById('fNumber').value=cust.number||'';
+  document.getElementById('fAmount').value=cust.amount;
+  document.getElementById('btnDeleteCust').style.display='block';
+  document.getElementById('addModal').classList.add('show');
+}
+
+function closeAddModal(){ 
+  document.getElementById('addModal').classList.remove('show');
+  // Clear form
+  document.getElementById('fName').value = '';
+  document.getElementById('fNumber').value = '';
+  document.getElementById('fAmount').value = '';
+  document.getElementById('btnDeleteCust').style.display = 'none';
+}
+
+// Initialize the app with login check
+document.addEventListener('DOMContentLoaded',()=>{
+  // Check for existing session
+  const storedUser = localStorage.getItem(CURRENT_USER_KEY);
+  
+  if (storedUser) {
+    try {
+      const sessionData = JSON.parse(storedUser);
+      
+      // Check session timeout (30 days = 30 * 24 * 60 * 60 * 1000 milliseconds)
+      const SESSION_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 days
+      const now = Date.now();
+      
+      if (sessionData.loginTime && (now - sessionData.loginTime) > SESSION_TIMEOUT) {
+        localStorage.removeItem(CURRENT_USER_KEY);
+        console.log('Session expired due to timeout');
+      } else {
+        // Validate that the user still exists in the system
+        const users = loadUsers();
+        const validUser = users.find(u => u.username === sessionData.username && u.password === sessionData.password);
+        
+        if (validUser) {
+          // Update last activity time
+          const updatedSessionData = {
+            ...sessionData,
+            ...validUser,
+            lastActivity: now
+          };
+          
+          currentUser = validUser;
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedSessionData));
+          document.getElementById('loginOverlay').style.display = 'none';
+          console.log('User session restored:', validUser.username);
+          init();
+        } else {
+          // User no longer exists or password changed, clear session
+          localStorage.removeItem(CURRENT_USER_KEY);
+          console.log('Stored user session invalid, cleared session');
+        }
+      }
+    } catch (error) {
+      console.error('Error parsing stored user session:', error);
+      localStorage.removeItem(CURRENT_USER_KEY);
+    }
+  } else {
+    // Add enter key listeners for login
+    document.getElementById('loginUser').addEventListener('keydown',e=>{
+      if(e.key==='Enter') doLogin();
+    });
+    document.getElementById('loginPass').addEventListener('keydown',e=>{
+      if(e.key==='Enter') doLogin();
+    });
+  }
+});
+
+async function saveCustomer(){
+  const name=document.getElementById('fName').value.trim();
+  const number=document.getElementById('fNumber').value.trim();
+  const amtStr=document.getElementById('fAmount').value;
+  if(!name){ notify('Please enter a customer name','error'); return; }
+  const amount=evalFx(amtStr);
+
+  try {
+    if(currentId){
+      // Update existing customer
+      const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
+      const index = list.findIndex(c => c.id === currentId);
+      if(index !== -1) {
+        list[index] = { ...list[index], name, number, amount };
+        saveToStorage(STORAGE_KEYS[currentList], list);
+        renderAll();
+        notify('Customer updated!');
+      }
+    } else {
+      // Create new customer
+      const newCust = {
+        id: generateUniqueId(),
+        name,
+        number,
+        amount,
+        payments: [],
+        credits: [{
+          amount,
+          date: isoDate(),
+          time: timeStr(),
+          note: number ? `Opening balance - #${number}` : 'Opening balance',
+          status: 'Arrived',
+          timestamp: ts(),
+          user: currentUser?.username || 'system'
+        }],
+        createdAt: ts()
+      };
+      
+      // Add new customer at the beginning of the array (upper area on the line)
+      unpaidBills.unshift(newCust);
+      saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+      renderAll();
+      notify('Customer added!');
+    }
+    
+    closeAddModal();
+  } catch (error) {
+    notify('Failed to save customer: ' + error.message, 'error');
+  }
+}
+
+async function deleteCurrentCustomer(){
+  if(!currentId) return;
+  const confirmed = await customConfirm('Move this customer to Recycle Bin?');
+  if(!confirmed) return;
+  
+  try {
+    const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
+    const index = list.findIndex(c => c.id === currentId);
+    if(index !== -1) {
+      const customer = list[index];
+      customer.source = currentList;
+      deletedCustomers.push(customer);
+      list.splice(index, 1);
+      
+      saveToStorage(STORAGE_KEYS[currentList], list);
+      saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      renderAll();
+    }
+    
+    closeAddModal();
+    notify('Customer moved to recycle bin','warning');
+  } catch (error) {
+    notify('Failed to delete customer: ' + error.message, 'error');
+  }
+}
+
+async function quickDelete(id, which){
+  console.log('Quick delete called:', { id, which });
+  
+  const confirmed = await customConfirm('Move this customer to Recycle Bin?');
+  console.log('User confirmed:', confirmed);
+  
+  if(!confirmed) return;
+  
+  try {
+    console.log('Attempting to delete customer:', { id, which });
+    const list = which === 'unpaid' ? unpaidBills : vendorCustomers;
+    console.log('List before delete:', list.length, 'customers');
+    
+    const index = list.findIndex(c => c.id === id);
+    console.log('Customer index found:', index);
+    
+    if(index !== -1) {
+      const customer = list[index];
+      console.log('Customer to delete:', customer.name);
+      
+      customer.source = which;
+      deletedCustomers.push(customer);
+      list.splice(index, 1);
+      
+      console.log('Customer moved to recycle bin');
+      
+      localStorage.setItem(STORAGE_KEYS[which], JSON.stringify(list));
+      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
+      syncToServer();
+      renderAll();
+      
+      console.log('Delete completed successfully');
+      notify('Moved to recycle bin','warning');
+    } else {
+      console.error('Customer not found in list');
+      notify('Customer not found', 'error');
+    }
+  } catch (error) {
+    console.error('Delete error:', error);
+    notify('Failed to delete customer: ' + error.message, 'error');
+  }
+}
+
+// ── PAYMENT MODAL ──
+function openPayModal(id, which){
+  currentId=id; currentList=which;
+  const cust=(which==='unpaid'?unpaidBills:vendorCustomers).find(c=>c.id===id);
+  if(!cust) return;
+
+  const inp=document.getElementById('payAmt');
+  inp.value='';
+  refreshPayModal(cust);
+  document.getElementById('payModal').classList.add('show');
+  setTimeout(()=>inp.focus(),100);
+}
+
+function refreshPayModal(cust){
+  document.getElementById('payModalTitle').textContent='Manage: '+cust.name;
+  document.getElementById('payCustName').textContent=cust.name;
+  document.getElementById('payCustNum').textContent=cust.number?'#'+cust.number:'';
+
+  const rem=remaining(cust);
+  const paid=(cust.payments||[]).reduce((s,p)=>s+p.amount,0);
+  const pct=cust.amount>0?(paid/cust.amount)*100:0;
+  const remEl=document.getElementById('payCustRem');
+  remEl.textContent=fmt(rem);
+  remEl.className='custBalAmt '+(pct===0?'red':(pct>=100?'green':'yellow'));
+  document.getElementById('remAfterPay').textContent=fmt(rem);
+  document.getElementById('toggleLocBtn').textContent= currentList==='unpaid'?'⇄ → Vendor Details':'⇄ → Unpaid';
+
+  // History
+  renderPayHistory(cust);
+  // Initialize payment preview
+  updatePaymentPreview();
+}
+
+function renderPayHistory(cust){
+  const credits=(cust.credits||[]).slice().sort((a,b)=>b.timestamp-a.timestamp);
+  const payments=(cust.payments||[]).slice().sort((a,b)=>b.timestamp-a.timestamp);
+
+  const pc=document.getElementById('paneCredits');
+  const pp=document.getElementById('panePayments');
+
+  if(credits.length===0){
+    pc.innerHTML='<div class="noHist">No credits recorded</div>';
+  } else {
+    pc.innerHTML=credits.map(cr=>{
+      const notArr=cr.status==='Not Arrived';
+      return `<div class="histItem credit${notArr?' notArrived':''}">
+        <div>
+          <div class="histAmt ${notArr?'notArrived':'credit'}">${fmt(cr.amount)}</div>
+          <div class="histMeta">${cr.date||''} ${cr.time||''}</div>
+          <div class="histMeta" style="color:var(--sub)">👤 ${escHtml(cr.user||'system')}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  if(payments.length===0){
+    pp.innerHTML='<div class="noHist">No payments recorded</div>';
+  } else {
+    pp.innerHTML=payments.map(p=>`
+      <div class="histItem payment">
+        <div>
+          <div class="histAmt payment">${fmt(p.amount)}</div>
+          <div class="histMeta">${p.date||''} ${p.time||''}</div>
+          <div class="histMeta" style="color:var(--sub)">👤 ${escHtml(p.user||'system')}</div>
+        </div>
+      </div>`).join('');
+  }
+}
+
+function updatePaymentPreview(){
+  const cust=(currentList==='unpaid'?unpaidBills:vendorCustomers).find(c=>c.id===currentId);
+  if(!cust) return;
+  const amount=evalFx(document.getElementById('payAmt').value)||0;
+  const currentPaid=(cust.payments||[]).reduce((s,p)=>s+p.amount,0);
+  const newRemaining = Math.max(0, (cust.amount - currentPaid) - amount);
+  document.getElementById('remAfterPay').textContent=fmt(newRemaining);
+  const remEl=document.getElementById('remAfterPay');
+  const pct=cust.amount>0?((currentPaid + amount)/cust.amount)*100:0;
+  remEl.className='remAmt '+(pct===0?'red':(pct>=100?'green':'yellow'));
+}
+
+function closePayModal(){
+  document.getElementById('payModal').classList.remove('show');
+  document.getElementById('payAmt').value='';
+  document.getElementById('payNote').value='';
+  hidePaymentNoteSuggestions();
+}
+
+// ── PAYMENT NOTE AUTOCOMPLETE ──
+let paymentNoteSuggestions = [];
+let selectedSuggestionIndex = -1;
+
+function showPaymentNoteSuggestions(){
+  const input = document.getElementById('payNote');
+  const suggestionsDiv = document.getElementById('payNoteSuggestions');
+  const value = input.value.trim().toLowerCase();
+  
+  if(value.length < 2){
+    hidePaymentNoteSuggestions();
+    return;
+  }
+  
+  // Get all unique payment notes from both unpaid and book customers
+  const allNotes = [];
+  [...unpaidBills, ...vendorCustomers].forEach(cust => {
+    if(cust.payments){
+      cust.payments.forEach(payment => {
+        if(payment.note && payment.note.trim() && payment.note.toLowerCase() !== 'no note'){
+          allNotes.push(payment.note.trim());
+        }
+      });
+    }
+  });
+  
+  // Count frequency of each note
+  const noteFrequency = {};
+  allNotes.forEach(note => {
+    noteFrequency[note] = (noteFrequency[note] || 0) + 1;
+  });
+  
+  // Filter and sort suggestions
+  paymentNoteSuggestions = Object.keys(noteFrequency)
+    .filter(note => note.toLowerCase().includes(value))
+    .sort((a, b) => noteFrequency[b] - noteFrequency[a])
+    .slice(0, 8); // Limit to 8 suggestions
+  
+  if(paymentNoteSuggestions.length === 0){
+    hidePaymentNoteSuggestions();
+    return;
+  }
+  
+  // Render suggestions
+  suggestionsDiv.innerHTML = paymentNoteSuggestions.map((note, index) => `
+    <div class="suggestion-item ${index === selectedSuggestionIndex ? 'selected' : ''}" 
+         onclick="selectPaymentNote('${note.replace(/'/g, "\\'")}')"
+         data-index="${index}">
+      <span class="suggestion-text">${escHtml(note)}</span>
+      <span class="suggestion-count">${noteFrequency[note]}</span>
+    </div>
+  `).join('');
+  
+  suggestionsDiv.style.display = 'block';
+  selectedSuggestionIndex = -1;
+}
+
+function hidePaymentNoteSuggestions(){
+  document.getElementById('payNoteSuggestions').style.display = 'none';
+  selectedSuggestionIndex = -1;
+}
+
+function selectPaymentNote(note){
+  document.getElementById('payNote').value = note;
+  hidePaymentNoteSuggestions();
+  document.getElementById('payNote').focus();
+}
+
+function handlePaymentNoteKeydown(event){
+  const suggestionsDiv = document.getElementById('payNoteSuggestions');
+  const isShowing = suggestionsDiv.style.display === 'block';
+  
+  if(event.key === 'ArrowDown'){
+    event.preventDefault();
+    if(isShowing && paymentNoteSuggestions.length > 0){
+      selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, paymentNoteSuggestions.length - 1);
+      updateSuggestionSelection();
+    }
+  } else if(event.key === 'ArrowUp'){
+    event.preventDefault();
+    if(isShowing && paymentNoteSuggestions.length > 0){
+      selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+      updateSuggestionSelection();
+    }
+  } else if(event.key === 'Enter'){
+    event.preventDefault();
+    if(isShowing && selectedSuggestionIndex >= 0 && paymentNoteSuggestions[selectedSuggestionIndex]){
+      selectPaymentNote(paymentNoteSuggestions[selectedSuggestionIndex]);
+    } else {
+      hidePaymentNoteSuggestions();
+    }
+  } else if(event.key === 'Escape'){
+    hidePaymentNoteSuggestions();
+  }
+}
+
+function updateSuggestionSelection(){
+  const items = document.querySelectorAll('.suggestion-item');
+  items.forEach((item, index) => {
+    if(index === selectedSuggestionIndex){
+      item.classList.add('selected');
+    } else {
+      item.classList.remove('selected');
+    }
+  });
+}
+
+// Close suggestions when clicking outside
+document.addEventListener('click', function(event){
+  const payNoteInput = document.getElementById('payNote');
+  const suggestionsDiv = document.getElementById('payNoteSuggestions');
+  
+  if(!payNoteInput.contains(event.target) && !suggestionsDiv.contains(event.target)){
+    hidePaymentNoteSuggestions();
+  }
+});
+
+async function recordPayment(){
+  const cust=(currentList==='unpaid'?unpaidBills:vendorCustomers).find(c=>c.id===currentId);
+  if(!cust) { 
+    notify('Customer not found. Please try again.', 'error'); 
+    return; 
+  }
+  
+  const amount=evalFx(document.getElementById('payAmt').value);
+  const note=document.getElementById('payNote').value.trim();
+  
+  if(amount<=0){ 
+    notify('Please enter a valid amount','error'); 
+    return; 
+  }
+  
+  if(isNaN(amount) || !isFinite(amount)){
+    notify('Invalid amount format. Please use numbers only.', 'error');
+    return;
+  }
+  
+  try {
+    const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
+    const index = list.findIndex(c => c.id === currentId);
+    if(index === -1) {
+      notify('Customer data corrupted. Please refresh and try again.', 'error');
+      return;
+    }
+    
+    const updatedCust = { ...list[index] };
+    if(!updatedCust.payments) updatedCust.payments = [];
+    
+    const paymentEntry = {
+      amount: parseFloat(amount),
+      date: dateStr(),
+      time: timeStr(),
+      note: note || 'No note',
+      timestamp: ts(),
+      user: currentUser?.username || 'system'
+    };
+    
+    // Validate payment entry
+    if(!paymentEntry.amount || !paymentEntry.timestamp) {
+      throw new Error('Invalid payment entry data');
+    }
+    
+    updatedCust.payments.push(paymentEntry);
+    list[index] = updatedCust;
+    
+    // Save with verification
+    const saved = saveToStorage(STORAGE_KEYS[currentList], list);
+    if(!saved) {
+      throw new Error('Failed to save payment data');
+    }
+    
+    // Update UI only after successful save
+    renderAll();
+    
+    // Update the remaining balance display without calling updatePaymentPreview
+    const rem = remaining(updatedCust);
+    document.getElementById('payCustRem').textContent = fmt(rem);
+    document.getElementById('remAfterPay').textContent = fmt(rem);
+    
+    // Update payment history
+    renderPayHistory(updatedCust);
+    
+    document.getElementById('payAmt').value='';
+    document.getElementById('payNote').value='';
+    
+    notify(`Payment of ${fmt(amount)} recorded successfully! ✔`, 'success');
+    
+  } catch (error) {
+    console.error('Failed to record payment:', error);
+    notify('Failed to record payment. Please try again.', 'error');
+  }
+}
+
+async function deletePayCustomer(){
+  const confirmed = await customConfirm('Move this customer to Recycle Bin?');
+  if(!confirmed) return;
+  
+  try {
+    const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
+    const index = list.findIndex(c => c.id === currentId);
+    if(index !== -1) {
+      const customer = list[index];
+      customer.source = currentList;
+      deletedCustomers.push(customer);
+      list.splice(index, 1);
+      
+      localStorage.setItem(STORAGE_KEYS[currentList], JSON.stringify(list));
+      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
+      syncToServer();
+      renderAll();
+    }
+    
+    closePayModal();
+    notify('Moved to recycle bin','warning');
+  } catch (error) {
+    notify('Failed to delete customer: ' + error.message, 'error');
+  }
+}
+
+async function toggleLocation(){
+  const cust=(currentList==='unpaid'?unpaidBills:vendorCustomers).find(c=>c.id===currentId);
+  if(!cust) return;
+  const dest=currentList==='unpaid'?'vendor':'unpaid';
+  const confirmed = await customConfirm(`Move ${cust.name} to ${dest==='vendor'?'Vendor Details':'Unpaid Bills'}?`);
+  if(!confirmed) return;
+  
+  try {
+    const sourceList = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
+    const destList = dest === 'unpaid' ? unpaidBills : vendorCustomers;
+    
+    // Remove from source list
+    const sourceIndex = sourceList.findIndex(c => c.id === currentId);
+    if(sourceIndex !== -1) {
+      const customer = sourceList.splice(sourceIndex, 1)[0];
+      // Add to destination list
+      destList.push(customer);
+      
+      saveToStorage(STORAGE_KEYS[currentList], sourceList);
+      saveToStorage(STORAGE_KEYS[dest], destList);
+      
+      currentList = dest;
+      renderAll();
+      refreshPayModal(customer);
+      notify(`Moved to ${dest==='vendor'?'Vendor Details':'Unpaid Bills'}`);
+    }
+  } catch (error) {
+    notify('Failed to move customer: ' + error.message, 'error');
+  }
+}
+
+// ── PRINT ──
+function printCustomer(){
+  const cust=(currentList==='unpaid'?unpaidBills:vendorCustomers).find(c=>c.id===currentId);
+  if(!cust) return;
+  const totalPaid=(cust.payments||[]).reduce((s,p)=>s+p.amount,0);
+  const rem=remaining(cust);
+  const totalCredits=(cust.credits||[]).reduce((s,c)=>s+c.amount,0);
+  
+  // Create mobile-friendly statement in current window instead of popup
+  const statementHtml = generateMobileStatement(cust, totalPaid, rem, totalCredits);
+  
+  // Create a modal overlay for the statement
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    box-sizing: border-box;
+  `;
+  
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  `;
+  
+  content.innerHTML = `
+    <style>
+      @media print {
+        .statement-modal-header button,
+        .statement-modal-footer {
+          display: none !important;
+        }
+        .statement-modal-header {
+          justify-content: center !important;
+        }
+      }
+    </style>
+    <div class="statement-modal-header" style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-bottom: 1px solid #cbd5e1; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;">
+      <h3 style="margin: 0; font-family: 'Playfair Display', serif; color: #ea580c; font-size: 16px;">Customer Statement</h3>
+      <button onclick="this.closest('.statement-modal').remove()" style="background: var(--danger); color: white; border: none; border-radius: 6px; padding: 8px 12px; font-size: 14px; cursor: pointer; font-weight: 600;">Close</button>
+    </div>
+    <div style="flex: 1; overflow-y: auto; padding: 16px;" id="statementContent">
+      ${statementHtml}
+    </div>
+    <div class="statement-modal-footer" style="background: var(--surface); border-top: 1px solid var(--border); padding: 12px 16px; display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap;">
+      <button onclick="downloadStatement('${escHtml(cust.name)}')" style="background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #111; border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px; cursor: pointer; font-weight: 600; flex: 1; min-width: 120px;">Download PDF</button>
+      <button onclick="printStatement()" style="background: var(--blue); color: white; border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px; cursor: pointer; font-weight: 600; flex: 1; min-width: 120px;">Print</button>
+    </div>
+  `;
+  
+  modal.className = 'statement-modal';
+  modal.appendChild(content);
+  document.body.appendChild(modal);
+  
+  // Close on backdrop click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+}
+
+function generateMobileStatement(cust, totalPaid, rem, totalCredits) {
+  return `
+    <style>
+      .statement-header {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      .statement-logo {
+        font-family: 'Playfair Display', serif;
+        font-size: 18px;
+        font-weight: 700;
+        color: #ea580c;
+        margin-bottom: 4px;
+      }
+      .customer-info {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 12px;
+      }
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 4px;
+        font-size: 13px;
+      }
+      .info-label {
+        color: #64748b;
+        font-weight: 500;
+      }
+      .info-value {
+        font-weight: 600;
+        color: #1e293b;
+      }
+      .transaction-section {
+        margin-bottom: 12px;
+      }
+      .section-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 14px;
+        font-weight: 600;
+        color: #ea580c;
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid #ea580c;
+      }
+      .transaction-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        background: white;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .transaction-table th {
+        background: #f8fafc;
+        padding: 8px 6px;
+        text-align: left;
+        font-weight: 600;
+        color: #1e293b;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .transaction-table td {
+        padding: 6px;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .credit-row { background: rgba(16,185,129,.05); }
+      .payment-row { background: rgba(37,99,235,.05); }
+      .amount { font-family: 'Courier Prime', monospace; font-weight: 700; text-align: right; }
+      .credit-amount { color: #16a34a; }
+      .payment-amount { color: #2563eb; }
+      .status-badge {
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+      .status-arrived { background: rgba(16,185,129,.15); color: #16a34a; }
+      .status-not-arrived { background: rgba(245,158,11,.15); color: #d97706; }
+      .summary-section {
+        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 12px;
+        margin-top: 12px;
+      }
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+      .summary-label {
+        color: #64748b;
+        font-weight: 500;
+      }
+      .summary-value {
+        font-weight: 700;
+        font-family: 'Courier Prime', monospace;
+      }
+      .total-row {
+        border-top: 1px solid #cbd5e1;
+        padding-top: 6px;
+        margin-top: 6px;
+        font-weight: 700;
+      }
+      @media (max-width: 480px) {
+        .transaction-table { font-size: 11px; }
+        .transaction-table th, .transaction-table td { padding: 4px; }
+        .info-row { font-size: 12px; flex-direction: column; align-items: flex-start; gap: 2px; }
+        .summary-row { font-size: 12px; }
+      }
+    </style>
+    
+    <div class="statement-header">
+      <div class="statement-logo">📒 Unpaid Bills Manager</div>
+      <div style="font-size: 11px; color: #64748b;">${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+    </div>
+    
+    <div class="customer-info">
+      <div class="info-row">
+        <span class="info-label">Customer Name:</span>
+        <span class="info-value">${escHtml(cust.name)}</span>
+      </div>
+      ${cust.number ? `
+      <div class="info-row">
+        <span class="info-label">Account Number:</span>
+        <span class="info-value">#${escHtml(cust.number)}</span>
+      </div>` : ''}
+      <div class="info-row">
+        <span class="info-label">Customer Since:</span>
+        <span class="info-value">${cust.createdAt ? new Date(cust.createdAt).toLocaleDateString('en-GB') : 'N/A'}</span>
+      </div>
+    </div>
+    
+    <div class="transaction-section">
+      <div class="section-title">💰 Credits & Charges</div>
+      <table class="transaction-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Description</th>
+            <th>Status</th>
+            <th class="amount">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(cust.credits||[]).map(c=>`
+            <tr class="credit-row">
+              <td>${c.date||'—'}</td>
+              <td>${c.time||'—'}</td>
+              <td>${escHtml(c.note||'—')}</td>
+              <td><span class="status-badge ${c.status === 'Arrived' ? 'status-arrived' : 'status-not-arrived'}">${c.status}</span></td>
+              <td class="amount credit-amount">${fmt(c.amount)}</td>
+            </tr>
+          `).join('')}
+          <tr class="total-row">
+            <td colspan="4">Total Credits:</td>
+            <td class="amount credit-amount">${fmt(totalCredits)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="transaction-section">
+      <div class="section-title">💳 Payments</div>
+      <table class="transaction-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Note</th>
+            <th class="amount">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(cust.payments||[]).map(p=>`
+            <tr class="payment-row">
+              <td>${p.date||'—'}</td>
+              <td>${p.time||'—'}</td>
+              <td>${escHtml(p.note||'—')}</td>
+              <td class="amount payment-amount">${fmt(p.amount)}</td>
+            </tr>
+          `).join('')}
+          <tr class="total-row">
+            <td colspan="3">Total Paid:</td>
+            <td class="amount payment-amount">${fmt(totalPaid)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="summary-section">
+      <div class="section-title">📊 Account Summary</div>
+      <div class="summary-row">
+        <span class="summary-label">Total Charged:</span>
+        <span class="summary-value" style="color: #16a34a;">${fmt(cust.amount)}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Total Paid:</span>
+        <span class="summary-value" style="color: #2563eb;">${fmt(totalPaid)}</span>
+      </div>
+      <div class="summary-row total-row">
+        <span class="summary-label">Remaining Balance:</span>
+        <span class="summary-value" style="color: ${rem > 0 ? '#dc2626' : '#16a34a'}; font-size: 16px;">${fmt(rem)}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-label">Account Status:</span>
+        <span class="status-badge ${rem === 0 ? 'status-arrived' : (rem < cust.amount ? 'status-not-arrived' : 'status-arrived')}">${rem === 0 ? 'Paid' : (rem < cust.amount ? 'Partial' : 'Unpaid')}</span>
+      </div>
+    </div>
+  `;
+}
+
+function printStatement() {
+  try {
+    // Check if running in Android WebView
+    if (window.isAndroidWebView && window.AndroidNative) {
+      console.log('Using Android WebView print method');
+      
+      // Use Android's native print functionality
+      if (window.AndroidNative.printPage) {
+        window.AndroidNative.printPage();
+        notify('Print dialog opened...', 'success');
+      } else {
+        // Fallback: use window.print() which might work in some WebView implementations
+        window.print();
+        notify('Opening print dialog...', 'success');
+      }
+      
+    } else {
+      console.log('Using standard browser print method');
+      
+      // Standard browser print
+      window.print();
+    }
+    
+  } catch (error) {
+    console.error('Print failed:', error);
+    notify('Print failed. Please try again.', 'error');
+  }
+}
+
+function downloadStatement(customerName) {
+  try {
+    // Get the statement content
+    const statementContent = document.getElementById('statementContent');
+    if (!statementContent) {
+      notify('No statement content available', 'error');
+      return;
+    }
+    
+    // Show loading notification
+    notify('Generating PDF...', 'info');
+    
+    // Create a temporary container with proper styling for PDF
+    const tempContainer = document.createElement('div');
+    tempContainer.style.cssText = `
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      width: 210mm;
+      background: white;
+      font-family: 'Source Sans 3', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #1e293b;
+      line-height: 1.4;
+      font-size: 12px;
+      padding: 20px;
+    `;
+    
+    // Add the same styles as the HTML version
+    tempContainer.innerHTML = `
+      <style>
+        @page { 
+          margin: 1cm; 
+          size: A4; 
+        }
+        * { 
+          margin: 0; 
+          padding: 0; 
+          box-sizing: border-box; 
+        }
+        body { 
+          font-family: 'Source Sans 3', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: #ffffff;
+          color: #1e293b;
+          line-height: 1.4;
+          font-size: 12px;
+          padding: 20px;
+        }
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+          padding-bottom: 20px;
+          border-bottom: 2px solid #ea580c;
+        }
+        .header h1 {
+          font-family: 'Playfair Display', serif;
+          font-size: 24px;
+          font-weight: 700;
+          color: #ea580c;
+          margin: 0 0 10px 0;
+        }
+        .header p {
+          font-size: 14px;
+          color: #64748b;
+          margin: 5px 0;
+        }
+        .customer-info {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 15px;
+          margin-bottom: 20px;
+        }
+        .info-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+        .info-label {
+          font-weight: 600;
+          color: #64748b;
+        }
+        .info-value {
+          font-weight: 700;
+          color: #1e293b;
+        }
+        .section-title {
+          font-family: 'Playfair Display', serif;
+          font-size: 18px;
+          font-weight: 600;
+          color: #ea580c;
+          margin: 20px 0 10px 0;
+          padding-bottom: 8px;
+          border-bottom: 2px solid #ea580c;
+        }
+        .transaction-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .transaction-table th {
+          background: #f8fafc;
+          padding: 12px 8px;
+          text-align: left;
+          font-weight: 600;
+          color: #1e293b;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .transaction-table td {
+          padding: 10px 8px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .amount {
+          font-family: 'Courier Prime', monospace;
+          font-weight: 700;
+          text-align: right;
+        }
+        .credit-amount { color: #16a34a; }
+        .payment-amount { color: #2563eb; }
+        .status-badge {
+          padding: 4px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+        .status-arrived { background: rgba(16,185,129,.15); color: #16a34a; }
+        .status-not-arrived { background: rgba(245,158,11,.15); color: #d97706; }
+        .summary-section {
+          background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          padding: 20px;
+          margin-top: 20px;
+        }
+        .summary-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }
+        .summary-label {
+          font-weight: 600;
+          color: #64748b;
+        }
+        .summary-value {
+          font-weight: 700;
+          font-family: 'Courier Prime', monospace;
+          color: #1e293b;
+        }
+        .total-row {
+          border-top: 2px solid #cbd5e1;
+          padding-top: 10px;
+          margin-top: 10px;
+          font-weight: 700;
+        }
+        @media print {
+          body { font-size: 10px; }
+          .transaction-table { page-break-inside: avoid; }
+          tr { page-break-inside: avoid; }
+          td { page-break-inside: avoid; }
+          .summary-section { page-break-before: avoid; }
+        }
+      </style>
+      ${statementContent.innerHTML}
+    `;
+    
+    document.body.appendChild(tempContainer);
+    
+    // Generate PDF using html2canvas and jsPDF
+    html2canvas(tempContainer, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      width: tempContainer.scrollWidth,
+      height: tempContainer.scrollHeight
+    }).then(canvas => {
+      // Create PDF
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = 210; // A4 width in mm
+      const pageHeight = 297; // A4 height in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      // Add first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      
+      // Add additional pages if needed
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      // Generate filename
+      const fileName = `customer_statement_${customerName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Check if running in Android WebView
+      if (window.isAndroidWebView && window.AndroidNative) {
+        console.log('Using Android WebView PDF download method');
+        
+        try {
+          // Convert PDF to base64 and send to Android
+          const pdfBase64 = pdf.output('datauristring').split(',')[1];
+          window.AndroidNative.downloadFile(pdfBase64, fileName);
+          notify('PDF statement download started...', 'success');
+          
+        } catch (error) {
+          console.error('Android PDF download failed:', error);
+          if (window.AndroidNative && window.AndroidNative.showError) {
+            window.AndroidNative.showError('PDF download failed: ' + error.message);
+          } else {
+            notify('PDF download failed. Please try again.', 'error');
+          }
+        }
+        
+      } else {
+        console.log('Using standard browser PDF download method');
+        
+        // Standard browser download
+        try {
+          pdf.save(fileName);
+          notify('PDF statement downloaded successfully!', 'success');
+        } catch (error) {
+          console.error('PDF download failed:', error);
+          
+          // Fallback: create blob and download
+          const pdfBlob = pdf.output('blob');
+          const url = URL.createObjectURL(pdfBlob);
+          
+          const downloadLink = document.createElement('a');
+          downloadLink.href = url;
+          downloadLink.download = fileName;
+          downloadLink.style.display = 'none';
+          document.body.appendChild(downloadLink);
+          
+          downloadLink.click();
+          
+          // Cleanup
+          setTimeout(() => {
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(url);
+          }, 1000);
+          
+          notify('PDF statement downloaded!', 'success');
+        }
+      }
+      
+      // Clean up temporary container
+      document.body.removeChild(tempContainer);
+      
+    }).catch(error => {
+      console.error('Error generating PDF:', error);
+      document.body.removeChild(tempContainer);
+      notify('Failed to generate PDF. Please try again.', 'error');
+    });
+    
+  } catch (error) {
+    console.error('Error preparing PDF statement:', error);
+    notify('Failed to prepare PDF statement. Please try again.', 'error');
+  }
+}
+
+// ── CREDIT ──
+function openCreditModal(){
+  document.getElementById('crAmt').value='';
+  document.getElementById('crNote').value='';
+  document.getElementById('crStatus').value='Arrived';
+  document.getElementById('crDate').value=isoDate();
+  document.getElementById('crTime').value=timeStr();
+  
+  // Populate credit history
+  populateCreditHistory();
+  
+  document.getElementById('creditModal').classList.add('show');
+  setTimeout(()=>document.getElementById('crAmt').focus(),100);
+}
+
+function closeCreditModal(){ document.getElementById('creditModal').classList.remove('show'); }
+
+function populateCreditHistory(){
+  const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
+  const cust = list.find(c => c.id === currentId);
+  if (!cust) return;
+  
+  const credits = (cust.credits || []).slice().sort((a, b) => b.timestamp - a.timestamp);
+  const historyContainer = document.getElementById('creditHistoryList');
+  
+  if (credits.length === 0) {
+    historyContainer.innerHTML = '<div style="padding: 15px; text-align: center; color: var(--muted); font-size: 11px; font-style: italic;">No credits recorded yet</div>';
+  } else {
+    historyContainer.innerHTML = credits.map(cr => {
+      const notArr = cr.status === 'Not Arrived';
+      return `
+        <div style="padding: 8px 12px; border-bottom: 1px solid var(--card); ${notArr ? 'background: rgba(245,158,11,.08);' : 'background: rgba(16,185,129,.08);'}">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="flex: 1;">
+              <div style="font-family: 'Courier Prime', monospace; font-weight: 700; font-size: 11px; color: ${notArr ? 'var(--warning)' : 'var(--success)'};">
+                ${fmt(cr.amount)}
+              </div>
+              <div style="font-size: 9px; color: var(--sub); margin-top: 1px;">
+                ${cr.date || ''} ${cr.time || ''}
+              </div>
+              <div style="font-size: 9px; color: var(--muted); margin-top: 1px;">
+                ${escHtml(cr.note || 'No note')}
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+              <span style="font-size: 8px; padding: 1px 6px; border-radius: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; background: ${notArr ? 'rgba(245,158,11,.15)' : 'rgba(16,185,129,.15)'}; color: ${notArr ? 'var(--warning)' : 'var(--success)'};">
+                ${cr.status}
+              </span>
+              <div style="font-size: 8px; color: var(--muted);">
+                👤 ${escHtml(cr.user || 'system')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+async function saveCredit(){
+  const amount=evalFx(document.getElementById('crAmt').value);
+  if(amount<=0){ 
+    notify('Enter a valid amount','error'); 
+    return; 
+  }
+  
+  if(isNaN(amount) || !isFinite(amount)){
+    notify('Invalid amount format. Please use numbers only.', 'error');
+    return;
+  }
+  
+  const note=document.getElementById('crNote').value.trim();
+  const status=document.getElementById('crStatus').value;
+  const date=document.getElementById('crDate').value;
+  const time=document.getElementById('crTime').value;
+
+  const list=currentList==='unpaid'?unpaidBills:vendorCustomers;
+  const cust=list.find(c=>c.id===currentId);
+  if(!cust){ 
+    notify('Customer not found. Please try again.', 'error'); 
+    return; 
+  }
+  
+  try {
+    const index = list.findIndex(c => c.id === currentId);
+    if(index === -1) {
+      notify('Customer data corrupted. Please refresh and try again.', 'error');
+      return;
+    }
+    
+    const updatedCust = { ...list[index] };
+    if(!updatedCust.credits) updatedCust.credits = [];
+    
+    const creditEntry = {
+      amount: parseFloat(amount),
+      date: date || dateStr(),
+      time: time || timeStr(),
+      note: note || 'No note',
+      status: status || 'Arrived',
+      timestamp: ts(),
+      user: currentUser?.username || 'system'
+    };
+    
+    // Validate credit entry
+    if(!creditEntry.amount || !creditEntry.timestamp) {
+      throw new Error('Invalid credit entry data');
+    }
+    
+    updatedCust.credits.push(creditEntry);
+    
+    // Update amount only if credit has arrived
+    if(status === 'Arrived') {
+      const currentAmount = parseFloat(updatedCust.amount) || 0;
+      updatedCust.amount = currentAmount + parseFloat(amount);
+    }
+    
+    list[index] = updatedCust;
+    
+    // Save with verification
+    const saved = saveToStorage(STORAGE_KEYS[currentList], list);
+    if(!saved) {
+      throw new Error('Failed to save credit data');
+    }
+    
+    // Update UI only after successful save
+    renderAll();
+    refreshPayModal(updatedCust);
+    
+    closeCreditModal();
+    notify(`Credit of ${fmt(amount)} added successfully! ✔`, 'success');
+    
+  } catch (error) {
+    console.error('Failed to add credit:', error);
+    notify('Failed to add credit. Please try again.', 'error');
+  }
+}
+
+// ── SETTINGS ──
+function openSettings(){
+  const admin=isAdmin();
+  let html=`
+    <div class="settingSection">
+      <h4><span class="section-icon">💾</span> Data Management</h4>
+      <button class="settingBtn" onclick="backupData()">
+        <span class="icon">📦</span>
+        <div class="text-content">
+          <div class="text">Backup Data</div>
+          <div class="desc">Export all data to JSON file</div>
+        </div>
+      </button>
+      <button class="settingBtn" onclick="document.getElementById('importFile').click()">
+        <span class="icon">📥</span>
+        <div class="text-content">
+          <div class="text">Import Backup</div>
+          <div class="desc">Load data from JSON file</div>
+        </div>
+      </button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
+      <button class="settingBtn" onclick="openBinModal()">
+        <span class="icon">🗑</span>
+        <div class="text-content">
+          <div class="text">Recycle Bin (${deletedCustomers.length})</div>
+          <div class="desc">Restore deleted customers</div>
+        </div>
+      </button>
+      <button class="settingBtn danger" onclick="resetAllData()">
+        <span class="icon">🔥</span>
+        <div class="text-content">
+          <div class="text">Reset All Data</div>
+          <div class="desc">Permanently delete all customer data and users</div>
+        </div>
+      </button>
+    </div>`;
+  
+  if(admin){
+    html+=`<div class="settingSection">
+      <h4><span class="section-icon">👥</span> User Management</h4>
+      <button class="settingBtn" onclick="showCreateAccount()">
+        <span class="icon">➕</span>
+        <div class="text-content">
+          <div class="text">Create New User</div>
+          <div class="desc">Add new user account</div>
+        </div>
+      </button>
+      <div id="usersListArea"></div>
+    </div>`;
+  }
+  
+  html+=`<div class="settingSection">
+    <h4><span class="section-icon">👤</span> Current Session</h4>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+        <div style="width:40px;height:40px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;color:#111;">
+          ${currentUser.role === 'admin' ? '👑' : '👤'}
+        </div>
+        <div>
+          <div style="font-weight:700;font-size:16px;color:var(--text);">${currentUser.fullName}</div>
+          <div style="font-size:12px;color:var(--sub);">@${currentUser.username} · ${currentUser.role === 'admin' ? 'Administrator' : 'User'}</div>
+        </div>
+      </div>
+    </div>
+    <button class="settingBtn danger" onclick="logout()">
+      <span class="icon">🚪</span>
+      <div class="text-content">
+        <div class="text">Logout</div>
+        <div class="desc">Sign out of current session</div>
+      </div>
+    </button>
+  </div>
+    <div class="settingSection">
+      <h4><span class="section-icon">ℹ️</span> About</h4>
+      <div style="background:linear-gradient(135deg,var(--surface),var(--card2));border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;">
+        <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;color:var(--accent);margin-bottom:12px;">Unpaid Bills Manager</div>
+        <div style="font-size:14px;color:var(--sub);margin-top:12px;">This software created by aashy</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">since 2026</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">aashiqmohamedd@gmail.com</div>
+      </div>
+    </div>`;
+  
+  document.getElementById('settingsBody').innerHTML=html;
+  if(admin) renderUsersList();
+  document.getElementById('settingsModal').classList.add('show');
+}
+
+function closeSettings(){ document.getElementById('settingsModal').classList.remove('show'); }
+
+async function renderUsersList(){
+  const area=document.getElementById('usersListArea');
+  if(!area) return;
+  
+  try {
+    const users = loadUsers();
+    area.innerHTML=users.map(u=>`
+      <div class="userItem">
+        <div class="userItemInfo">
+          <div class="userItemName">${escHtml(u.fullName)}</div>
+          <div class="userItemSub">${escHtml(u.username)} · ${u.role==='admin'?'Admin':'User'}</div>
+        </div>
+        <div class="userItemActions">
+          ${u.id !== 'admin_default' ? `<button class="btnXs del" onclick="deleteUser('${u.id}','${escHtml(u.username)}')">Del</button>` : '<span style="color: var(--sub); font-size: 11px;">System Admin</span>'}
+        </div>
+      </div>`).join('');
+  } catch (error) {
+    area.innerHTML = '<div class="noHist">Failed to load users</div>';
+  }
+}
+
+async function deleteUser(id, uname){
+  if(id === 'admin_default') {
+    notify('Cannot delete the default admin user', 'error');
+    return;
+  }
+  
+  const confirmed = await customConfirm(`Delete user "${uname}"?`);
+  if(!confirmed) return;
+  
+  try {
+    const users = loadUsers();
+    const filteredUsers = users.filter(u => u.id !== id);
+    saveUsers(filteredUsers);
+    renderUsersList();
+    notify('User deleted successfully');
+  } catch (error) {
+    notify('Failed to delete user: ' + error.message, 'error');
+  }
+}
+
+// ── RECYCLE BIN ──
+function openBinModal(){
+  const html=deletedCustomers.length===0
+    ?'<div class="noHist" style="padding:30px">Recycle bin is empty 🎉</div>'
+    :deletedCustomers.map(c=>`
+      <div class="deletedCard">
+        <div class="deletedInfo">
+          <div class="deletedName">${escHtml(c.name)}</div>
+          <div class="deletedMeta">${c.number?'#'+c.number+' · ':''}Balance: ${fmt(remaining(c))} · From: ${c.source||'unknown'}</div>
+        </div>
+        <div class="deletedActions">
+          <button class="restoreBtn" onclick="restoreCustomer(${c.id})">Restore</button>
+          <button class="btnXs del" onclick="permanentDeleteCustomer(${c.id}, '${escHtml(c.name)}')" title="Permanently delete">🗑</button>
+        </div>
+      </div>`).join('');
+  document.getElementById('binBody').innerHTML=html;
+  document.getElementById('binModal').classList.add('show');
+}
+
+function closeBinModal(){ document.getElementById('binModal').classList.remove('show'); }
+
+async function restoreCustomer(id){
+  try {
+    const index = deletedCustomers.findIndex(c => c.id === id);
+    if(index !== -1) {
+      const customer = deletedCustomers.splice(index, 1)[0];
+      const destList = customer.source === 'vendor' ? vendorCustomers : unpaidBills;
+      destList.push(customer);
+      
+      saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      saveToStorage(STORAGE_KEYS[customer.source], destList);
+      
+      renderAll();
+      openBinModal();
+      notify('Customer restored successfully!');
+    }
+  } catch (error) {
+    notify('Failed to restore customer: ' + error.message, 'error');
+  }
+}
+
+async function permanentDeleteCustomer(id, customerName) {
+  const confirmed = await customConfirm(`Permanently delete "${customerName}"? This action cannot be undone.`);
+  if (!confirmed) return;
+  
+  try {
+    const index = deletedCustomers.findIndex(c => c.id === id);
+    if (index !== -1) {
+      deletedCustomers.splice(index, 1);
+      saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      
+      openBinModal();
+      notify(`"${customerName}" permanently deleted`, 'success');
+    }
+  } catch (error) {
+    notify('Failed to delete customer: ' + error.message, 'error');
+  }
+}
+
+// ── BACKUP / IMPORT ──
+async function backupData(){
+  try {
+    const data={
+      unpaidBills: unpaidBills,
+      vendorCustomers: vendorCustomers,
+      deletedCustomers: deletedCustomers,
+      exportDate:new Date().toISOString(),
+      version:'1.0'
+    };
+    
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`unpaid_bills_backup_${isoDate()}.json`;
+    a.click();
+    notify('Backup downloaded successfully!');
+  } catch (error) {
+    notify('Failed to create backup: ' + error.message, 'error');
+  }
+}
+
+async function importData(input){
+  const file=input.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=async (e)=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      
+      // Validate backup structure
+      if(data.version && data.unpaidBills && data.vendorCustomers && data.deletedCustomers !== undefined) {
+        const confirmed = await customConfirm('This will replace all current data. Continue?');
+        if(!confirmed) return;
+        
+        unpaidBills = data.unpaidBills || [];
+        vendorCustomers = data.vendorCustomers || [];
+        deletedCustomers = data.deletedCustomers || [];
+        
+        saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+        saveToStorage(STORAGE_KEYS.vendor, vendorCustomers);
+        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+        
+        renderAll();
+        notify('Data imported successfully!');
+      } else {
+        notify('Invalid backup file format', 'error');
+      }
+    } catch(err){ 
+      notify('Invalid backup file','error'); 
+    }
+  };
+  reader.readAsText(file);
+  input.value='';
+}
+
+// ── KEYBOARD SHORTCUTS ──
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    ['addModal','payModal','creditModal','settingsModal','createAccountModal','binModal','confirmModal','summaryModal'].forEach(id=>{
+      document.getElementById(id)?.classList.remove('show');
+    });
+  }
+  if(e.key==='Enter'&&document.getElementById('payModal').classList.contains('show')){
+    if(document.activeElement.id==='payAmt'||document.activeElement.id==='payNote'){
+      recordPayment();
+    }
+  }
+  if(e.key==='Enter'&&document.getElementById('addModal').classList.contains('show')){
+    if(['fName','fNumber','fAmount'].includes(document.activeElement.id)){
+      saveCustomer();
+    }
+  }
+  if(e.key==='Enter'&&document.getElementById('creditModal').classList.contains('show')){
+    if(['crAmt','crNote'].includes(document.activeElement.id)){
+      saveCredit();
+    }
+  }
+  if(e.key==='Enter'&&document.getElementById('createAccountModal').classList.contains('show')){
+    if(['caFullName','caUsername','caPassword','caConfirmPassword'].includes(document.activeElement.id)){
+      createAccount();
+    }
+  }
+});
+
+// ── SUMMARY REPORT ──
+function openSummaryReport() {
+  generateSummaryReport();
+  document.getElementById('summaryModal').classList.add('show');
+}
+
+function closeSummaryModal() {
+  document.getElementById('summaryModal').classList.remove('show');
+}
+
+function generateSummaryReport() {
+  const totalUnpaidCustomers = unpaidBills.length;
+  const totalVendorCustomers = vendorCustomers.length;
+  
+  const unpaidTotalCharged = unpaidBills.reduce((sum, cust) => sum + (cust.amount || 0), 0);
+  const vendorTotalCharged = vendorCustomers.reduce((sum, cust) => sum + (cust.amount || 0), 0);
+  
+  const unpaidTotalPaid = unpaidBills.reduce((sum, cust) => sum + (cust.payments || []).reduce((pSum, p) => pSum + p.amount, 0), 0);
+  const vendorTotalPaid = vendorCustomers.reduce((sum, cust) => sum + (cust.payments || []).reduce((pSum, p) => pSum + p.amount, 0), 0);
+  
+  const unpaidRemaining = unpaidBills.reduce((sum, cust) => sum + remaining(cust), 0);
+  const vendorRemaining = vendorCustomers.reduce((sum, cust) => sum + remaining(cust), 0);
+  
+  const totalCustomers = totalUnpaidCustomers + totalVendorCustomers;
+  const totalCharged = unpaidTotalCharged + vendorTotalCharged;
+  const totalPaid = unpaidTotalPaid + vendorTotalPaid;
+  const totalRemaining = unpaidRemaining + vendorRemaining;
+  
+  const summaryHTML = `
+    <div style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px; margin-bottom: 20px; text-align: center;">
+      <h2 style="font-family: 'Playfair Display', serif; color: #ea580c; margin: 0 0 10px 0; font-size: 24px;">📊 Financial Summary Report</h2>
+      <p style="margin: 0; color: #64748b; font-size: 14px;">Generated on ${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+      <!-- Unpaid Bills Summary -->
+      <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 12px; padding: 16px;">
+        <h3 style="color: #dc2626; margin: 0 0 12px 0; font-family: 'Playfair Display', serif; display: flex; align-items: center; gap: 8px;">
+          <span>🔴</span> Unpaid Bills
+        </h3>
+        <div style="display: grid; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">Customers:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #1e293b;">${totalUnpaidCustomers}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">Total Charged:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #16a34a;">${fmt(unpaidTotalCharged)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">Total Paid:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #2563eb;">${fmt(unpaidTotalPaid)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #fca5a5; padding-top: 8px; margin-top: 8px;">
+            <span style="color: #dc2626; font-weight: 600; font-size: 14px;">Remaining:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #dc2626; font-size: 16px;">${fmt(unpaidRemaining)}</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Vendor Details Summary -->
+      <div style="background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px;">
+        <h3 style="color: #16a34a; margin: 0 0 12px 0; font-family: 'Playfair Display', serif; display: flex; align-items: center; gap: 8px;">
+          <span>📗</span> Vendor Details
+        </h3>
+        <div style="display: grid; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">Customers:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #1e293b;">${totalVendorCustomers}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">Total Charged:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #16a34a;">${fmt(vendorTotalCharged)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 13px;">Total Paid:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #2563eb;">${fmt(vendorTotalPaid)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 2px solid #bbf7d0; padding-top: 8px; margin-top: 8px;">
+            <span style="color: #16a34a; font-weight: 600; font-size: 14px;">Remaining:</span>
+            <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #16a34a; font-size: 16px;">${fmt(vendorRemaining)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Overall Summary -->
+    <div style="background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); border: 2px solid #cbd5e1; border-radius: 12px; padding: 20px;">
+      <h3 style="color: #1e293b; margin: 0 0 16px 0; font-family: 'Playfair Display', serif; text-align: center; font-size: 18px;">📈 Overall Summary</h3>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+        <div style="text-align: center; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">Total Customers</div>
+          <div style="font-family: 'Courier Prime', monospace; font-size: 24px; font-weight: 700; color: #1e293b;">${totalCustomers}</div>
+        </div>
+        <div style="text-align: center; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">Total Charged</div>
+          <div style="font-family: 'Courier Prime', monospace; font-size: 24px; font-weight: 700; color: #16a34a;">${fmt(totalCharged)}</div>
+        </div>
+        <div style="text-align: center; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">Total Paid</div>
+          <div style="font-family: 'Courier Prime', monospace; font-size: 24px; font-weight: 700; color: #2563eb;">${fmt(totalPaid)}</div>
+        </div>
+        <div style="text-align: center; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0;">
+          <div style="color: #64748b; font-size: 12px; margin-bottom: 4px;">Total Remaining</div>
+          <div style="font-family: 'Courier Prime', monospace; font-size: 24px; font-weight: 700; color: ${totalRemaining > 0 ? '#dc2626' : '#16a34a'};">${fmt(totalRemaining)}</div>
+        </div>
+      </div>
+      
+      <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="color: #64748b; font-size: 13px;">Collection Rate:</span>
+          <span style="font-family: 'Courier Prime', monospace; font-weight: 700; color: #1e293b;">
+            ${totalCharged > 0 ? ((totalPaid / totalCharged) * 100).toFixed(1) : 0}%
+          </span>
+        </div>
+        <div style="width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+          <div style="width: ${totalCharged > 0 ? (totalPaid / totalCharged) * 100 : 0}%; height: 100%; background: linear-gradient(90deg, #16a34a, #2563eb); transition: width 0.3s ease;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('summaryContent').innerHTML = summaryHTML;
+}
+
+function printSummaryReport() {
+  const win = window.open('', '_blank');
+  const summaryContent = document.getElementById('summaryContent').innerHTML;
+  
+  win.document.write(`<!DOCTYPE html><html><head>
+    <title>Summary Report</title>
+    <style>
+      @page { margin: 0.2cm; size: A4 landscape; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'Source Sans 3', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #ffffff;
+        color: #1e293b;
+        line-height: 1.0;
+        font-size: 7px;
+      }
+      .header {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border: 1px solid #cbd5e1;
+        border-radius: 2px;
+        padding: 2px;
+        margin-bottom: 2px;
+        text-align: center;
+      }
+      .logo {
+        font-family: 'Playfair Display', serif;
+        font-size: 12px;
+        font-weight: 700;
+        color: #ea580c;
+        margin-bottom: 0;
+        letter-spacing: 1px;
+      }
+      .summary-box {
+        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        border: 1px solid #cbd5e1;
+        border-radius: 2px;
+        padding: 2px;
+        margin-bottom: 2px;
+      }
+      .section-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 8px;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0 0 2px 0;
+        text-align: center;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2px;
+        margin-bottom: 2px;
+      }
+      .card {
+        border-radius: 2px;
+        padding: 2px;
+        border: 1px solid;
+      }
+      .unpaid-card {
+        background: #fee2e2;
+        border-color: #fca5a5;
+      }
+      .vendor-card {
+        background: #dcfce7;
+        border-color: #bbf7d0;
+      }
+      .card-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 7px;
+        font-weight: 700;
+        margin: 0 0 2px 0;
+        display: flex;
+        align-items: center;
+        gap: 1px;
+      }
+      .unpaid-title { color: #dc2626; }
+      .vendor-title { color: #16a34a; }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1px;
+        font-size: 6px;
+      }
+      .label {
+        color: #64748b;
+      }
+      .value {
+        font-family: 'Courier Prime', 'Courier New', monospace;
+        font-weight: 700;
+        color: #1e293b;
+        font-size: 6px;
+      }
+      .total-row {
+        border-top: 1px solid;
+        padding-top: 1px;
+        margin-top: 1px;
+      }
+      .unpaid-total { border-color: #fca5a5; }
+      .vendor-total { border-color: #bbf7d0; }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 2px;
+        margin-bottom: 2px;
+      }
+      .stat-card {
+        text-align: center;
+        padding: 2px;
+        background: #ffffff;
+        border-radius: 2px;
+        border: 1px solid #e2e8f0;
+      }
+      .stat-label {
+        color: #64748b;
+        font-size: 6px;
+        margin-bottom: 0;
+      }
+      .stat-value {
+        font-family: 'Courier Prime', 'Courier New', monospace;
+        font-size: 8px;
+        font-weight: 700;
+        color: #1e293b;
+      }
+      .progress-bar {
+        margin-top: 2px;
+        padding: 2px;
+        background: #f8fafc;
+        border-radius: 2px;
+        border: 1px solid #e2e8f0;
+      }
+      .progress-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1px;
+        font-size: 6px;
+      }
+      .progress-track {
+        width: 100%;
+        height: 3px;
+        background: #e2e8f0;
+        border-radius: 1px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #16a34a, #2563eb);
+      }
+      @media print {
+        body { font-size: 6px; }
+        .header { page-break-after: auto; }
+        .summary-box { page-break-inside: avoid; }
+        .card { page-break-inside: avoid; }
+        .grid { page-break-inside: avoid; }
+        body::before {
+          content: '';
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 500px;
+          height: 500px;
+          background-image: url('icon.png');
+          background-size: contain;
+          background-repeat: no-repeat;
+          background-position: center;
+          opacity: 0.1;
+          pointer-events: none;
+          z-index: 999;
+        }
+      }
+    </style></head><body>
+    
+    <div class="header">
+      <div class="logo">📊 Financial Summary Report</div>
+      <div style="color: #64748b; font-size: 14px;">Generated on ${new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+    </div>
+    
+    <!-- Overall Summary -->
+    <div class="summary-box">
+      <div class="section-title" style="margin-bottom: 20px;">📈 Account Summary</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Customers</div>
+          <div class="stat-value">${totalCustomers}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Charged</div>
+          <div class="stat-value">${fmt(totalCharged)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Paid</div>
+          <div class="stat-value">${fmt(totalPaid)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Remaining</div>
+          <div class="stat-value">${fmt(totalRemaining)}</div>
+        </div>
+      </div>
+      
+      <div class="progress-bar">
+        <div class="progress-row">
+          <span style="color: #64748b; font-size: 13px;">Collection Rate:</span>
+          <span style="font-family: 'Courier Prime', 'Courier New', monospace; font-weight: 700; color: #1e293b;">
+            ${totalCharged > 0 ? ((totalPaid / totalCharged) * 100).toFixed(1) : 0}%
+          </span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width: ${totalCharged > 0 ? (totalPaid / totalCharged) * 100 : 0}%;"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="grid">
+      <!-- Unpaid Bills Summary -->
+      <div class="card unpaid-card">
+        <h3 class="card-title unpaid-title">
+          <span>🔴</span> Unpaid Bills
+        </h3>
+        <div>
+          <div class="row">
+            <span class="label">Customers:</span>
+            <span class="value">${totalUnpaidCustomers}</span>
+          </div>
+          <div class="row">
+            <span class="label">Total Charged:</span>
+            <span class="value">${fmt(unpaidTotalCharged)}</span>
+          </div>
+          <div class="row">
+            <span class="label">Total Paid:</span>
+            <span class="value">${fmt(unpaidTotalPaid)}</span>
+          </div>
+          <div class="row total-row unpaid-total">
+            <span style="color: #dc2626; font-weight: 600; font-size: 14px;">Remaining:</span>
+            <span class="value" style="color: #dc2626; font-size: 16px;">${fmt(unpaidRemaining)}</span>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Vendor Details Summary -->
+      <div class="card vendor-card">
+        <h3 class="card-title vendor-title">
+          <span>📗</span> Vendor Details
+        </h3>
+        <div>
+          <div class="row">
+            <span class="label">Customers:</span>
+            <span class="value">${totalVendorCustomers}</span>
+          </div>
+          <div class="row">
+            <span class="label">Total Charged:</span>
+            <span class="value">${fmt(vendorTotalCharged)}</span>
+          </div>
+          <div class="row">
+            <span class="label">Total Paid:</span>
+            <span class="value">${fmt(vendorTotalPaid)}</span>
+          </div>
+          <div class="row total-row vendor-total">
+            <span style="color: #16a34a; font-weight: 600; font-size: 14px;">Remaining:</span>
+            <span class="value" style="color: #16a34a; font-size: 16px;">${fmt(vendorRemaining)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    </body></html>`);
+  win.document.close();
+  win.onload = () => { win.print(); };
+}
+</script>
+
+<script>
+// ── RESET ALL DATA ──
+async function resetAllData() {
+  const confirmed = await customConfirm('Are you absolutely sure you want to reset ALL data? This will permanently delete all customers, payments, credits, and users. This action cannot be undone.');
+  if (!confirmed) {
+    return;
+  }
+
+  const finalConfirmation = await customConfirm('This is your last chance. All data will be lost. Proceed?');
+  if (!finalConfirmation) {
+    return;
+  }
+
+  try {
+    // Clear all application-specific data from localStorage
+    localStorage.removeItem(STORAGE_KEYS.unpaid);
+    localStorage.removeItem(STORAGE_KEYS.vendor);
+    localStorage.removeItem(STORAGE_KEYS.deleted);
+    localStorage.removeItem(USERS_KEY);
+    localStorage.removeItem(CURRENT_USER_KEY);
+
+    // Reset in-memory data
+    unpaidBills = [];
+    vendorCustomers = [];
+    deletedCustomers = [];
+
+    // Inform the server about the empty state
+    syncToServer();
+
+    notify('All data has been reset. Reloading...', 'success');
+    setTimeout(() => {
+      // Force a full reload and re-login
+      location.reload();
+    }, 1500);
+
+  } catch (error) {
+    console.error('Error resetting all data:', error);
+    notify('Failed to reset all data. Please try again.', 'error');
+  }
+}
+</script>
+</body>
+</html>
