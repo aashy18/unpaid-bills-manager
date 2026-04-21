@@ -1339,7 +1339,7 @@ function validateDataIntegrity() {
 // ── DATA LOADING ──
 async function loadAll() {
   try {
-    // Load from localStorage using the new functions
+// Load from localStorage using the new functions
     console.log('Loading from localStorage...');
     unpaidBills = await loadCustomersFromStorage('unpaid');
     vendorCustomers = await loadCustomersFromStorage('vendor');
@@ -1554,7 +1554,7 @@ function createAccount() {
 
 // ── INIT ──
 async function init() {
-  // Initialize Socket.IO connection first
+// Initialize Socket.IO connection first
   initializeSocket();
   
   // Load data from localStorage
