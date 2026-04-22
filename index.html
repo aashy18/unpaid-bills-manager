@@ -1447,12 +1447,35 @@ async function syncToSupabase(localStorageKey, data) {
     // to prevent accidental deletion of other users' data.
     // The RLS policies in SUPABASE_SETUP.md are currently set to `true`, which means no restrictions.
     // You should update these policies to filter by `auth.uid()` for multi-user security.
+
+    // Transform data to match SQL schema (snake_case columns and specific field names)
+    const formattedData = data.map(item => {
+      const mapped = {
+        id: item.id,
+        name: item.name,
+        number: item.number,
+        balance: parseFloat(item.balance !== undefined ? item.balance : (item.amount || 0)),
+        payments: item.payments || [],
+        credits: item.credits || []
+      };
+
+      // Map camelCase JS dates to snake_case SQL columns as ISO strings
+      if (item.createdAt) mapped.created_at = new Date(item.createdAt).toISOString();
+      if (item.updatedAt) mapped.updated_at = new Date(item.updatedAt).toISOString();
+      
+      if (tableName === 'deleted_customers') {
+        if (item.deletedAt) mapped.deleted_at = new Date(item.deletedAt).toISOString();
+        mapped.original_table = item.source || item.original_table || '';
+      }
+      return mapped;
+    });
     
     // Delete existing data (assuming RLS handles user scope)
     const { error: deleteError } = await window.supabase
       .from(tableName)
       .delete()
       .neq('id', 'dummy_id_to_delete_all_for_user'); // Placeholder, RLS should filter by user
+    await window.supabase.from(tableName).delete().neq('id', 'dummy_id_to_delete_all_for_user');
 
     if (deleteError) {
       console.error(`Error deleting existing data from Supabase table ${tableName}:`, deleteError);
@@ -1463,6 +1486,7 @@ async function syncToSupabase(localStorageKey, data) {
     const { data: insertedData, error: insertError } = await window.supabase
       .from(tableName)
       .insert(data);
+      .insert(formattedData);
 
     if (insertError) {
       console.error(`Error inserting data into Supabase table ${tableName}:`, insertError);
@@ -1486,6 +1510,15 @@ async function loadFromSupabase(localStorageKey) {
     const { data, error } = await window.supabase.from(tableName).select('*');
     if (error) throw error;
     return data;
+    
+    // Map back to JS format (camelCase and specific field names)
+    return data.map(item => ({
+      ...item,
+      createdAt: item.created_at ? new Date(item.created_at).getTime() : item.createdAt,
+      updatedAt: item.updated_at ? new Date(item.updated_at).getTime() : item.updatedAt,
+      deletedAt: item.deleted_at ? new Date(item.deleted_at).getTime() : item.deletedAt,
+      source: item.original_table || item.source
+    }));
   } catch (error) {
     console.error(`Error loading from Supabase table ${tableName}:`, error);
     return null;
