@@ -9,6 +9,31 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- Supabase script removed - using localStorage for reliable offline functionality -->
+<!-- Supabase client library -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Supabase configuration (replace with your actual project URL and anon key)
+  // Refer to SUPABASE_SETUP.md for instructions on how to get these credentials.
+  const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co'; // Replace with your Project URL
+  const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // Replace with your anon public key
+
+  let supabaseClient = null;
+
+  try {
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
+      supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      window.supabase = supabaseClient; // Make it globally accessible
+      console.log('Supabase client initialized successfully!');
+      isServerMode = true; // Set server mode to true if Supabase is initialized
+    } else {
+      console.warn('Supabase credentials not configured. Running in localStorage-only mode.');
+      isServerMode = false;
+    }
+  } catch (error) {
+    console.error('Error initializing Supabase client:', error);
+    isServerMode = false;
+  }
+</script>
 <style>
 :root{
   --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
@@ -1321,6 +1346,13 @@ const STORAGE_KEYS = {
   deleted: 'deletedCustomers'
 };
 
+// Map localStorage keys to Supabase table names
+const SUPABASE_TABLE_MAP = {
+  [STORAGE_KEYS.unpaid]: 'unpaid_bills',
+  [STORAGE_KEYS.vendor]: 'vendor_customers',
+  [STORAGE_KEYS.deleted]: 'deleted_customers'
+};
+
 function saveToStorage(key, data) {
   try {
     // Validate data before saving
@@ -1350,8 +1382,9 @@ function saveToStorage(key, data) {
     console.log('Successfully saved data for key:', key, 'Size:', jsonString.length, 'bytes');
     
     // Sync to server if in server mode
-    if (isServerMode) {
-      syncToServer();
+    if (isServerMode && window.supabase) {
+      console.log(`Attempting to sync data for key: ${key} to Supabase`);
+      syncToSupabase(key, data).catch(err => console.error('Background Supabase sync failed:', err)); // Non-blocking sync
     }
     
     return true;
@@ -1383,6 +1416,22 @@ function saveToStorage(key, data) {
 
 function loadFromStorage(key) {
   try {
+    // Try loading from Supabase first if in server mode
+    if (isServerMode && window.supabase) {
+      console.log(`Attempting to load data for key: ${key} from Supabase`);
+      const supabaseData = await loadFromSupabase(key);
+      if (supabaseData && supabaseData.length > 0) {
+        console.log(`Successfully loaded ${supabaseData.length} items from Supabase for key: ${key}`);
+        // Also save to localStorage for offline access
+        localStorage.setItem(key, JSON.stringify(supabaseData));
+        return supabaseData;
+      } else {
+        console.log(`No data found in Supabase for key: ${key}, falling back to localStorage.`);
+      }
+    }
+
+    // Fallback to localStorage
+    // Existing localStorage loading logic
     const data = localStorage.getItem(key);
     if (!data) {
       console.log('No data found for key:', key);
@@ -1588,6 +1637,72 @@ function validateDataIntegrity() {
   }
 }
 
+// Supabase data synchronization functions
+async function syncToSupabase(localStorageKey, data) {
+  if (!window.supabase) {
+    console.warn('Supabase client not available for sync.');
+    return;
+  }
+
+  const tableName = SUPABASE_TABLE_MAP[localStorageKey];
+  if (!tableName) {
+    console.error(`No Supabase table mapping found for localStorage key: ${localStorageKey}`);
+    return;
+  }
+
+  try {
+    console.log(`Syncing ${localStorageKey} to Supabase table ${tableName}...`);
+    // For simplicity, we'll delete all existing data for the current user and insert new data.
+    // In a real-world app, you'd want more granular upserts or diffing.
+    // IMPORTANT: Ensure Row Level Security (RLS) is correctly configured in Supabase
+    // to prevent accidental deletion of other users' data.
+    // The RLS policies in SUPABASE_SETUP.md are currently set to `true`, which means no restrictions.
+    // You should update these policies to filter by `auth.uid()` for multi-user security.
+    
+    // Delete existing data (assuming RLS handles user scope)
+    const { error: deleteError } = await window.supabase
+      .from(tableName)
+      .delete()
+      .neq('id', 'dummy_id_to_delete_all_for_user'); // Placeholder, RLS should filter by user
+
+    if (deleteError) {
+      console.error(`Error deleting existing data from Supabase table ${tableName}:`, deleteError);
+      throw deleteError;
+    }
+
+    // Now insert the new data
+    const { data: insertedData, error: insertError } = await window.supabase
+      .from(tableName)
+      .insert(data);
+
+    if (insertError) {
+      console.error(`Error inserting data into Supabase table ${tableName}:`, insertError);
+      throw insertError;
+    }
+
+    console.log(`Successfully synced ${data.length} items to Supabase table ${tableName}.`);
+    notify(`Data synced to cloud for ${localStorageKey}`, 'success');
+
+  } catch (error) {
+    console.error(`Failed to sync ${localStorageKey} to Supabase:`, error);
+    notify(`Failed to sync data to cloud for ${localStorageKey}: ${error.message}`, 'error');
+  }
+}
+
+async function loadFromSupabase(localStorageKey) {
+  const tableName = SUPABASE_TABLE_MAP[localStorageKey];
+  if (!tableName) return null;
+
+  try {
+    const { data, error } = await window.supabase.from(tableName).select('*');
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error(`Error loading from Supabase table ${tableName}:`, error);
+    return null;
+  }
+}
+
 // ── DATA LOADING ──
 async function loadAll() {
   try {
@@ -1604,9 +1719,30 @@ async function loadAll() {
     }
     
     // Load data from localStorage
-    unpaidBills = await loadCustomersFromStorage('unpaid');
-    vendorCustomers = await loadCustomersFromStorage('vendor');
-    deletedCustomers = await loadDeletedCustomersFromStorage();
+    // These functions are now updated to try Supabase first, then localStorage
+    unpaidBills = await loadCustomersFromStorage('unpaid'); // This is now async
+    vendorCustomers = await loadCustomersFromStorage('vendor'); // This is now async
+    deletedCustomers = await loadDeletedCustomersFromStorage(); // This is now async
+    
+    // If Supabase is active and local data is empty, try to load from Supabase again
+    // This handles cases where initial load might have failed but Supabase is now ready
+    if (isServerMode && window.supabase && unpaidBills.length === 0 && vendorCustomers.length === 0) {
+      console.log('Local data is empty, attempting a full load from Supabase...');
+      try {
+        const supabaseUnpaid = await loadFromSupabase(STORAGE_KEYS.unpaid);
+        const supabaseVendor = await loadFromSupabase(STORAGE_KEYS.vendor);
+        const supabaseDeleted = await loadFromSupabase(STORAGE_KEYS.deleted);
+
+        if (supabaseUnpaid) unpaidBills = supabaseUnpaid;
+        if (supabaseVendor) vendorCustomers = supabaseVendor;
+        if (supabaseDeleted) deletedCustomers = supabaseDeleted;
+
+        // Save to localStorage after loading from Supabase
+        saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+        saveToStorage(STORAGE_KEYS.vendor, vendorCustomers);
+        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      } catch (e) { console.error('Failed to load all from Supabase after initial empty local data:', e); }
+    }
     
     // Ensure all customers have required arrays
     const allCustomers = [...unpaidBills, ...vendorCustomers];
@@ -1668,6 +1804,102 @@ function checkAndRestoreFromBackup() {
     console.error('Failed to check and restore from backup:', error);
   }
   return false;
+}
+
+// Load customers from localStorage (or Supabase if available)
+async function loadCustomersFromStorage(source) {
+  const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+  const tableName = SUPABASE_TABLE_MAP[key];
+
+  if (isServerMode && window.supabase && tableName) {
+    try {
+      console.log(`Attempting to load ${source} customers from Supabase table ${tableName}`);
+      const supabaseData = await loadFromSupabase(key);
+      if (supabaseData && supabaseData.length > 0) {
+        console.log(`Loaded ${supabaseData.length} ${source} customers from Supabase.`);
+        // Save to localStorage for offline access and as primary source for the app
+        localStorage.setItem(key, JSON.stringify(supabaseData));
+        return supabaseData;
+      } else {
+        console.log(`No ${source} customers found in Supabase, falling back to localStorage.`);
+      }
+    } catch (error) {
+      console.error(`Error loading ${source} customers from Supabase, falling back to localStorage:`, error);
+      notify(`Failed to load ${source} customers from cloud. Using local data.`, 'warning');
+    }
+  }
+
+  // Fallback to localStorage
+  try {
+    const data = localStorage.getItem(key);
+    
+    if (!data) {
+      console.log(`No data found for ${source} in localStorage, returning empty array`);
+      return [];
+    }
+    
+    const customers = JSON.parse(data);
+    
+    if (!Array.isArray(customers)) {
+      console.error(`Data for ${source} in localStorage is not an array, resetting to empty array`);
+      localStorage.setItem(key, JSON.stringify([]));
+      return [];
+    }
+    console.log(`Loaded ${customers.length} customers from localStorage (${source})`);
+    return customers;
+  } catch (error) {
+    console.error(`Error loading customers from localStorage (${source}):`, error);
+    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    localStorage.setItem(key, JSON.stringify([]));
+    return [];
+  }
+}
+
+// Load deleted customers from localStorage (or Supabase if available)
+async function loadDeletedCustomersFromStorage() {
+  const key = STORAGE_KEYS.deleted;
+  const tableName = SUPABASE_TABLE_MAP[key];
+
+  if (isServerMode && window.supabase && tableName) {
+    try {
+      console.log('Attempting to load deleted customers from Supabase');
+      const supabaseData = await loadFromSupabase(key);
+      if (supabaseData && supabaseData.length > 0) {
+        console.log(`Loaded ${supabaseData.length} deleted customers from Supabase.`);
+        localStorage.setItem(key, JSON.stringify(supabaseData));
+        return supabaseData;
+      } else {
+        console.log('No deleted customers found in Supabase, falling back to localStorage.');
+      }
+    } catch (error) {
+      console.error('Error loading deleted customers from Supabase, falling back to localStorage:', error);
+      notify('Failed to load deleted customers from cloud. Using local data.', 'warning');
+    }
+  }
+
+  // Fallback to localStorage
+  try {
+    const data = localStorage.getItem(key);
+    
+    if (!data) {
+      console.log('No deleted customers data found in localStorage, returning empty array');
+      return [];
+    }
+    
+    const customers = JSON.parse(data);
+    
+    if (!Array.isArray(customers)) {
+      console.error('Deleted customers data in localStorage is not an array, resetting to empty array');
+      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify([]));
+      return [];
+    }
+    console.log(`Loaded ${customers.length} deleted customers from localStorage`);
+    return customers;
+  } catch (error) {
+    console.error('Error loading deleted customers from localStorage:', error);
+    localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify([]));
+    return [];
+  }
 }
 
 // Load payments and credits for all customers (temporarily disabled)
