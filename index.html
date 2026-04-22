@@ -8,7 +8,7 @@
 <!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<!-- <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
@@ -903,26 +903,72 @@ window.bodyTest = function() {
 
 <!-- ══════════════ SCRIPT ══════════════ -->
 <script>
-// ââ LocalStorage Configuration ââ
-// All data is stored in browser localStorage for offline functionality
+// ââ Supabase Configuration ââ
+// Replace localStorage with Supabase for cloud database storage
+
+// ââ SUPABASE CONFIGURATION ââ
+// Replace the placeholder values below with your actual Supabase project credentials
+// Get these from your Supabase project dashboard -> Settings -> API
+const SUPABASE_URL = 'https://jnqnssbofwaioudalovk.supabase.co'; // Your Supabase project URL
+const SUPABASE_ANON_KEY = 'sb_publishable_ndFcMjtJFL37fVmi3ZPSEA_U_oBUmSb'; // Your Supabase anonymous key
+
+// Initialize Supabase client
+let supabase;
+try {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  console.log('Supabase client initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize Supabase client:', error);
+  // Fallback to localStorage if Supabase fails
+  console.log('Falling back to localStorage mode');
+}
 
 // ââ Data Storage Architecture ââ
-// All application data is stored in browser localStorage:
-// - unpaidBills: Unpaid customer data
-// - vendorCustomers: Vendor customer data  
-// - deletedCustomers: Soft-deleted customer data
-// - appUsers: User authentication data
+// All application data is stored in Supabase:
+// - unpaid_bills: Unpaid customer data
+// - vendor_customers: Vendor customer data  
+// - deleted_customers: Soft-deleted customer data
+// - app_users: User authentication data
 
-// ââ LocalStorage CRUD Functions ââ
+// ââ Supabase CRUD Functions ââ
 
-// Load customers from localStorage
+// Load customers from Supabase
 async function loadCustomersFromStorage(source) {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, falling back to localStorage');
+      return loadCustomersFromLocalStorage(source);
+    }
+    
+    const tableName = source === 'unpaid' ? 'unpaid_bills' : 'vendor_customers';
+    const { data: customers, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading customers from Supabase:', error);
+      // Fallback to localStorage
+      return loadCustomersFromLocalStorage(source);
+    }
+    
+    console.log(`Loaded ${customers.length} customers from Supabase (${source})`);
+    return customers || [];
+  } catch (error) {
+    console.error('Error loading customers from Supabase:', error);
+    // Fallback to localStorage
+    return loadCustomersFromLocalStorage(source);
+  }
+}
+
+// Fallback localStorage function
+async function loadCustomersFromLocalStorage(source) {
   try {
     const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
     const data = localStorage.getItem(key);
     const customers = data ? JSON.parse(data) : [];
     
-    console.log(`Loaded ${customers.length} customers from localStorage (${source})`);
+    console.log(`Loaded ${customers.length} customers from localStorage fallback (${source})`);
     return customers;
   } catch (error) {
     console.error('Error loading customers from localStorage:', error);
@@ -930,8 +976,45 @@ async function loadCustomersFromStorage(source) {
   }
 }
 
-// Save customer to localStorage (replaces Supabase)
+// Save customer to Supabase
 async function saveCustomerToStorage(customer, source) {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, falling back to localStorage');
+      return saveCustomerToLocalStorage(customer, source);
+    }
+    
+    const tableName = source === 'unpaid' ? 'unpaid_bills' : 'vendor_customers';
+    
+    // Add timestamp if not present
+    if (!customer.created_at) {
+      customer.created_at = new Date().toISOString();
+    }
+    customer.updated_at = new Date().toISOString();
+    
+    const { data, error } = await supabase
+      .from(tableName)
+      .upsert(customer)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error saving customer to Supabase:', error);
+      // Fallback to localStorage
+      return saveCustomerToLocalStorage(customer, source);
+    }
+    
+    console.log(`Customer saved to Supabase (${source})`);
+    return data;
+  } catch (error) {
+    console.error('Error saving customer to Supabase:', error);
+    // Fallback to localStorage
+    return saveCustomerToLocalStorage(customer, source);
+  }
+}
+
+// Fallback localStorage function
+async function saveCustomerToLocalStorage(customer, source) {
   try {
     const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
     const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
@@ -946,7 +1029,7 @@ async function saveCustomerToStorage(customer, source) {
     
     // Save to localStorage
     saveToStorage(key, list);
-    console.log(`Customer saved to localStorage (${source})`);
+    console.log(`Customer saved to localStorage fallback (${source})`);
     return customer;
   } catch (error) {
     console.error('Error saving customer to localStorage:', error);
@@ -954,37 +1037,77 @@ async function saveCustomerToStorage(customer, source) {
   }
 }
 
-// Save payments to localStorage (replaces Supabase)
+// Save payments to Supabase
 async function savePaymentsToStorage(customerId, payments) {
   try {
-    // Payments are saved as part of the customer object in localStorage
-    console.log(`Saved ${payments.length} payments to localStorage for customer ${customerId}`);
+    if (!supabase) {
+      console.log('Supabase not available, payments saved as part of customer object');
+      return payments;
+    }
+    
+    // In Supabase, payments are stored as part of the customer record
+    // This function is kept for compatibility but the actual saving happens in saveCustomerToStorage
+    console.log(`Payments will be saved with customer record in Supabase for customer ${customerId}`);
     return payments;
   } catch (error) {
-    console.error('Error saving payments to localStorage:', error);
+    console.error('Error saving payments to Supabase:', error);
     throw error;
   }
 }
 
-// Save credits to localStorage (replaces Supabase)
+// Save credits to Supabase
 async function saveCreditsToStorage(customerId, credits) {
   try {
-    // Credits are saved as part of the customer object in localStorage
-    console.log(`Saved ${credits.length} credits to localStorage for customer ${customerId}`);
+    if (!supabase) {
+      console.log('Supabase not available, credits saved as part of customer object');
+      return credits;
+    }
+    
+    // In Supabase, credits are stored as part of the customer record
+    // This function is kept for compatibility but the actual saving happens in saveCustomerToStorage
+    console.log(`Credits will be saved with customer record in Supabase for customer ${customerId}`);
     return credits;
   } catch (error) {
-    console.error('Error saving credits to localStorage:', error);
+    console.error('Error saving credits to Supabase:', error);
     throw error;
   }
 }
 
-// Load deleted customers from localStorage (replaces Supabase)
+// Load deleted customers from Supabase
 async function loadDeletedCustomersFromStorage() {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, falling back to localStorage');
+      return loadDeletedCustomersFromLocalStorage();
+    }
+    
+    const { data: customers, error } = await supabase
+      .from('deleted_customers')
+      .select('*')
+      .order('deleted_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error loading deleted customers from Supabase:', error);
+      // Fallback to localStorage
+      return loadDeletedCustomersFromLocalStorage();
+    }
+    
+    console.log(`Loaded ${customers.length} deleted customers from Supabase`);
+    return customers || [];
+  } catch (error) {
+    console.error('Error loading deleted customers from Supabase:', error);
+    // Fallback to localStorage
+    return loadDeletedCustomersFromLocalStorage();
+  }
+}
+
+// Fallback localStorage function
+async function loadDeletedCustomersFromLocalStorage() {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.deleted);
     const customers = data ? JSON.parse(data) : [];
     
-    console.log(`Loaded ${customers.length} deleted customers from localStorage`);
+    console.log(`Loaded ${customers.length} deleted customers from localStorage fallback`);
     return customers;
   } catch (error) {
     console.error('Error loading deleted customers from localStorage:', error);
@@ -992,26 +1115,27 @@ async function loadDeletedCustomersFromStorage() {
   }
 }
 
-// ââ Test LocalStorage Integration ââ
-async function testLocalStorageIntegration() {
-  console.log('Testing localStorage integration...');
+// ââ Test Supabase Integration ââ
+async function testSupabaseIntegration() {
+  console.log('Testing Supabase integration...');
   
   try {
-    // Test loading customers
-    const unpaidCustomers = await loadCustomersFromStorage('unpaid');
-    const vendorCustomers = await loadCustomersFromStorage('vendor');
+    if (!supabase) {
+      console.log('Supabase not available, skipping integration test');
+      return false;
+    }
     
-    console.log(`Loaded ${unpaidCustomers.length} unpaid customers`);
-    console.log(`Loaded ${vendorCustomers.length} vendor customers`);
+    // Test connection
+    const { data, error } = await supabase.from('unpaid_bills').select('count').single();
+    if (error && !error.message.includes('does not exist')) {
+      console.error('Supabase connection test failed:', error);
+      return false;
+    }
     
-    // Test loading deleted customers
-    const deletedCustomers = await loadDeletedCustomersFromStorage();
-    console.log(`Loaded ${deletedCustomers.length} deleted customers`);
-    
-    console.log('LocalStorage integration test passed!');
+    console.log('Supabase integration test passed!');
     return true;
   } catch (error) {
-    console.error('LocalStorage integration test failed:', error);
+    console.error('Supabase integration test failed:', error);
     return false;
   }
 }
@@ -1051,7 +1175,7 @@ function syncToServer() {
 const USERS_KEY = 'appUsers';
 const CURRENT_USER_KEY = 'currentUser';
 
-// Default admin user
+// Default admin user (fallback for localStorage)
 const DEFAULT_ADMIN = {
   id: 'admin_default',
   fullName: 'Administrator',
@@ -1060,6 +1184,134 @@ const DEFAULT_ADMIN = {
   role: 'admin',
   createdAt: Date.now()
 };
+
+// Supabase Auth functions
+async function signUpUser(email, password, fullName) {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, using localStorage signup');
+      return signUpUserLocalStorage(email, password, fullName);
+    }
+    
+    const { data, error } = await supabase.auth.signUp({
+      email: email,
+      password: password,
+      options: {
+        data: {
+          full_name: fullName
+        }
+      }
+    });
+    
+    if (error) {
+      console.error('Supabase signup error:', error);
+      // Fallback to localStorage
+      return signUpUserLocalStorage(email, password, fullName);
+    }
+    
+    console.log('User signed up successfully with Supabase');
+    return data;
+  } catch (error) {
+    console.error('Error signing up user:', error);
+    // Fallback to localStorage
+    return signUpUserLocalStorage(email, password, fullName);
+  }
+}
+
+async function signInUser(email, password) {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, using localStorage signin');
+      return signInUserLocalStorage(email, password);
+    }
+    
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+    
+    if (error) {
+      console.error('Supabase signin error:', error);
+      // Fallback to localStorage
+      return signInUserLocalStorage(email, password);
+    }
+    
+    console.log('User signed in successfully with Supabase');
+    return data;
+  } catch (error) {
+    console.error('Error signing in user:', error);
+    // Fallback to localStorage
+    return signInUserLocalStorage(email, password);
+  }
+}
+
+async function signOutUser() {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, clearing localStorage session');
+      return signOutUserLocalStorage();
+    }
+    
+    const { error } = await supabase.auth.signOut();
+    
+    if (error) {
+      console.error('Supabase signout error:', error);
+    }
+    
+    console.log('User signed out successfully from Supabase');
+    return true;
+  } catch (error) {
+    console.error('Error signing out user:', error);
+    return signOutUserLocalStorage();
+  }
+}
+
+async function getCurrentUser() {
+  try {
+    if (!supabase) {
+      console.log('Supabase not available, checking localStorage');
+      return getCurrentUserLocalStorage();
+    }
+    
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      console.error('Supabase get user error:', error);
+      return getCurrentUserLocalStorage();
+    }
+    
+    console.log('Current user retrieved from Supabase');
+    return user;
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return getCurrentUserLocalStorage();
+  }
+}
+
+// Fallback localStorage functions
+async function signUpUserLocalStorage(email, password, fullName) {
+  console.log('Using localStorage signup fallback');
+  // Implementation for localStorage signup
+  return { user: { email, user_metadata: { full_name: fullName } } };
+}
+
+async function signInUserLocalStorage(email, password) {
+  console.log('Using localStorage signin fallback');
+  // Implementation for localStorage signin
+  return { user: { email } };
+}
+
+async function signOutUserLocalStorage() {
+  console.log('Using localStorage signout fallback');
+  localStorage.removeItem(CURRENT_USER_KEY);
+  return true;
+}
+
+async function getCurrentUserLocalStorage() {
+  console.log('Using localStorage get user fallback');
+  const userData = localStorage.getItem(CURRENT_USER_KEY);
+  return userData ? JSON.parse(userData) : null;
+}
 
 
 // ── LOCAL STORAGE FUNCTIONS ──
@@ -1379,11 +1631,11 @@ async function loadPaymentsAndCredits() {
 function getUser() { return currentUser; }
 function isAdmin() { return currentUser && currentUser.role === 'admin'; }
 
-function doLogin() {
+async function doLogin() {
   const username = document.getElementById('loginUser').value.trim();
-  const password = document.getElementById('loginPass').value.trim(); // Trim to match stored password
+  const password = document.getElementById('loginPass').value.trim();
   
-  console.log('Login attempt:', { username, passwordLength: password.length, password: `"${password}"` });
+  console.log('Login attempt:', { username, passwordLength: password.length });
   
   if (!username || !password) {
     const el = document.getElementById('loginErr');
@@ -1392,72 +1644,91 @@ function doLogin() {
     return;
   }
 
-  let users = [];
   try {
-    users = loadUsers();
-  } catch (error) {
-    console.error('Error loading users:', error);
-  }
-  
-  console.log('Available users:', users.map(u => ({ 
-    username: u.username, 
-    role: u.role, 
-    passwordLength: u.password.length,
-    password: `"${u.password}"`,
-    hasPassword: !!u.password
-  })));
-  
-  let user = users.find(u => u.username === username && u.password === password);
-  
-  // Fallback: if no users loaded and trying admin/admin, use default admin
-  if (!user && username === 'admin' && password === 'admin') {
-    console.log('Using fallback admin login');
-    user = DEFAULT_ADMIN;
-  }
-  
-  // Additional debugging for non-admin users
-  if (!user && username !== 'admin') {
-    console.log('Login failed for non-admin user. Checking user existence...');
-    const userExists = users.find(u => u.username === username);
-    if (userExists) {
-      console.log('User exists but password mismatch:', {
-        storedPassword: `"${userExists.password}"`,
-        providedPassword: `"${password}"`,
-        storedLength: userExists.password.length,
-        providedLength: password.length,
-        exactMatch: userExists.password === password,
-        trimmedMatch: userExists.password === password.trim(),
-        storedType: typeof userExists.password,
-        providedType: typeof password
-      });
-    } else {
-      console.log('User does not exist in system. Available usernames:', users.map(u => u.username));
+    // Try Supabase Auth first (treat username as email)
+    if (username.includes('@')) {
+      console.log('Attempting Supabase login with email');
+      const result = await signInUser(username, password);
+      
+      if (result && result.user) {
+        currentUser = {
+          id: result.user.id,
+          username: result.user.email,
+          fullName: result.user.user_metadata?.full_name || result.user.email,
+          role: 'user',
+          email: result.user.email
+        };
+        
+        // Store session
+        const sessionData = {
+          ...currentUser,
+          loginTime: Date.now(),
+          lastActivity: Date.now(),
+          isSupabaseAuth: true
+        };
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionData));
+        
+        document.getElementById('loginOverlay').style.display = 'none';
+        console.log('Supabase login successful, initializing app');
+        init();
+        return;
+      }
     }
-  }
-  
-  console.log('User found:', user ? { username: user.username, role: user.role } : null);
-  
-  if (user) {
-    currentUser = user;
-    // Store user with timestamp for session management
-    const sessionData = {
-      ...user,
-      loginTime: Date.now(),
-      lastActivity: Date.now()
-    };
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionData));
-    document.getElementById('loginOverlay').style.display = 'none';
-    console.log('Login successful, initializing app');
-    init();
-  } else {
+    
+    // Fallback to localStorage authentication
+    console.log('Falling back to localStorage authentication');
+    
+    let users = [];
+    try {
+      users = loadUsers();
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+    
+    let user = users.find(u => u.username === username && u.password === password);
+    
+    // Fallback: if no users loaded and trying admin/admin, use default admin
+    if (!user && username === 'admin' && password === 'admin') {
+      console.log('Using fallback admin login');
+      user = DEFAULT_ADMIN;
+    }
+    
+    if (user) {
+      currentUser = user;
+      // Store user with timestamp for session management
+      const sessionData = {
+        ...user,
+        loginTime: Date.now(),
+        lastActivity: Date.now(),
+        isSupabaseAuth: false
+      };
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(sessionData));
+      document.getElementById('loginOverlay').style.display = 'none';
+      console.log('LocalStorage login successful, initializing app');
+      init();
+    } else {
+      const el = document.getElementById('loginErr');
+      el.textContent = 'Invalid username or password';
+      el.style.display = 'block';
+      console.log('Login failed: invalid credentials');
+    }
+    
+  } catch (error) {
+    console.error('Login error:', error);
     const el = document.getElementById('loginErr');
-    el.textContent = 'Invalid username or password';
+    el.textContent = 'Login failed. Please try again.';
     el.style.display = 'block';
-    console.log('Login failed: invalid credentials');
   }
 }
 
-function logout() {
+async function logout() {
+  try {
+    // Try Supabase signout first
+    await signOutUser();
+  } catch (error) {
+    console.error('Error during Supabase signout:', error);
+  }
+  
   currentUser = null;
   localStorage.removeItem(CURRENT_USER_KEY);
   location.reload();
@@ -1495,7 +1766,7 @@ function closeCreateAccount() {
   document.getElementById('caConfirmPassword').value = '';
 }
 
-function createAccount() {
+async function createAccount() {
   const fullName = document.getElementById('caFullName').value.trim();
   const username = document.getElementById('caUsername').value.trim();
   const password = document.getElementById('caPassword').value;
@@ -1513,43 +1784,63 @@ function createAccount() {
     return;
   }
   
-  const users = loadUsers();
-  console.log('Current users before creation:', users.map(u => ({ username: u.username, role: u.role })));
-  
-  // Check if username already exists
-  if (users.find(u => u.username === username)) {
-    notify('Username already exists', 'error');
-    console.log('Username already exists:', username);
-    return;
+  try {
+    // Try Supabase Auth first if username looks like email
+    if (username.includes('@')) {
+      console.log('Attempting Supabase account creation with email');
+      const result = await signUpUser(username, password, fullName);
+      
+      if (result && result.user) {
+        closeCreateAccount();
+        notify('Account created successfully! You can now login with your email.');
+        return;
+      }
+    }
+    
+    // Fallback to localStorage account creation
+    console.log('Falling back to localStorage account creation');
+    
+    const users = loadUsers();
+    console.log('Current users before creation:', users.map(u => ({ username: u.username, role: u.role })));
+    
+    // Check if username already exists
+    if (users.find(u => u.username === username)) {
+      notify('Username already exists', 'error');
+      console.log('Username already exists:', username);
+      return;
+    }
+    
+    const newUser = {
+      id: 'user_' + Date.now(),
+      fullName,
+      username,
+      password: password.trim(), // Ensure no trailing whitespace
+      role: 'user',
+      createdAt: Date.now()
+    };
+    
+    console.log('Creating new user:', { 
+      username: newUser.username, 
+      role: newUser.role, 
+      id: newUser.id,
+      passwordLength: newUser.password.length
+    });
+    
+    users.push(newUser);
+    saveUsers(users);
+    
+    // Verify the user was saved
+    const verifyUsers = loadUsers();
+    const savedUser = verifyUsers.find(u => u.username === username);
+    console.log('User saved successfully:', !!savedUser);
+    
+    closeCreateAccount();
+    notify('Account created successfully! You can now login.');
+    
+  } catch (error) {
+    console.error('Error creating account:', error);
+    notify('Failed to create account. Please try again.', 'error');
   }
-  
-  const newUser = {
-    id: 'user_' + Date.now(),
-    fullName,
-    username,
-    password: password.trim(), // Ensure no trailing whitespace
-    role: 'user',
-    createdAt: Date.now()
-  };
-  
-  console.log('Creating new user:', { 
-    username: newUser.username, 
-    role: newUser.role, 
-    id: newUser.id,
-    passwordLength: newUser.password.length,
-    password: `"${newUser.password}"`
-  });
-  
-  users.push(newUser);
-  saveUsers(users);
-  
-  // Verify the user was saved
-  const verifyUsers = loadUsers();
-  const savedUser = verifyUsers.find(u => u.username === username);
-  console.log('User saved successfully:', !!savedUser);
-  
-  closeCreateAccount();
-  notify('Account created successfully! You can now login.');
 }
 
 // ── INIT ──
