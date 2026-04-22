@@ -1529,17 +1529,6 @@ async function verifyStorageIntegrity() {
   } catch (e) { return false; }
 }
 
-        if (supabaseUnpaid) unpaidBills = supabaseUnpaid;
-        if (supabaseVendor) vendorCustomers = supabaseVendor;
-        if (supabaseDeleted) deletedCustomers = supabaseDeleted;
-
-        // Save to localStorage after loading from Supabase
-        saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
-        saveToStorage(STORAGE_KEYS.vendor, vendorCustomers);
-        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
-      } catch (e) { console.error('Failed to load all from Supabase after initial empty local data:', e); }
-    }
-    
     // Ensure all customers have required arrays
     const allCustomers = [...unpaidBills, ...vendorCustomers];
     allCustomers.forEach(customer => {
