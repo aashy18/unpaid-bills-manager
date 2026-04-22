@@ -913,11 +913,10 @@ const SUPABASE_URL = 'https://jnqnssbofwaioudalovk.supabase.co'; // Your Supabas
 const SUPABASE_ANON_KEY = 'sb_publishable_ndFcMjtJFL37fVmi3ZPSEA_U_oBUmSb'; // Your Supabase anonymous key
 
 // Initialize Supabase client
-let supabaseClient;
 function initializeSupabase() {
-  if (typeof window.supabase !== 'undefined' && !supabaseClient) {
+  if (typeof window.supabase !== 'undefined') {
     try {
-      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       console.log('Supabase client initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Supabase client:', error);
@@ -946,13 +945,13 @@ if (document.readyState === 'loading') {
 // Load customers from Supabase
 async function loadCustomersFromStorage(source) {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, falling back to localStorage');
       return loadCustomersFromLocalStorage(source);
     }
     
     const tableName = source === 'unpaid' ? 'unpaid_bills' : 'vendor_customers';
-    const { data: customers, error } = await supabaseClient
+    const { data: customers, error } = await window.supabaseClient
       .from(tableName)
       .select('*')
       .order('created_at', { ascending: false });
@@ -990,7 +989,7 @@ async function loadCustomersFromLocalStorage(source) {
 // Save customer to Supabase
 async function saveCustomerToStorage(customer, source) {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, falling back to localStorage');
       return saveCustomerToLocalStorage(customer, source);
     }
@@ -1051,7 +1050,7 @@ async function saveCustomerToLocalStorage(customer, source) {
 // Save payments to Supabase
 async function savePaymentsToStorage(customerId, payments) {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, payments saved as part of customer object');
       return payments;
     }
@@ -1069,7 +1068,7 @@ async function savePaymentsToStorage(customerId, payments) {
 // Save credits to Supabase
 async function saveCreditsToStorage(customerId, credits) {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, credits saved as part of customer object');
       return credits;
     }
@@ -1087,12 +1086,12 @@ async function saveCreditsToStorage(customerId, credits) {
 // Load deleted customers from Supabase
 async function loadDeletedCustomersFromStorage() {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, falling back to localStorage');
       return loadDeletedCustomersFromLocalStorage();
     }
     
-    const { data: customers, error } = await supabaseClient
+    const { data: customers, error } = await window.supabaseClient
       .from('deleted_customers')
       .select('*')
       .order('deleted_at', { ascending: false });
@@ -1131,13 +1130,13 @@ async function testSupabaseIntegration() {
   console.log('Testing Supabase integration...');
   
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, skipping integration test');
       return false;
     }
     
     // Test connection
-    const { data, error } = await supabaseClient.from('unpaid_bills').select('count').single();
+    const { data, error } = await window.supabaseClient.from('unpaid_bills').select('count').single();
     if (error && !error.message.includes('does not exist')) {
       console.error('Supabase connection test failed:', error);
       return false;
@@ -1199,12 +1198,12 @@ const DEFAULT_ADMIN = {
 // Supabase Auth functions
 async function signUpUser(email, password, fullName) {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, using localStorage signup');
       return signUpUserLocalStorage(email, password, fullName);
     }
     
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await window.supabase.auth.signUp({
       email: email,
       password: password,
       options: {
@@ -1231,12 +1230,12 @@ async function signUpUser(email, password, fullName) {
 
 async function signInUser(email, password) {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, using localStorage signin');
       return signInUserLocalStorage(email, password);
     }
     
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await window.supabase.auth.signInWithPassword({
       email: email,
       password: password
     });
@@ -1258,12 +1257,12 @@ async function signInUser(email, password) {
 
 async function signOutUser() {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, clearing localStorage session');
       return signOutUserLocalStorage();
     }
     
-    const { error } = await supabase.auth.signOut();
+    const { error } = await window.supabase.auth.signOut();
     
     if (error) {
       console.error('Supabase signout error:', error);
@@ -1279,12 +1278,12 @@ async function signOutUser() {
 
 async function getCurrentUser() {
   try {
-    if (!supabaseClient) {
+    if (!window.supabaseClient) {
       console.log('Supabase not available, checking localStorage');
       return getCurrentUserLocalStorage();
     }
     
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const { data: { user }, error } = await window.supabase.auth.getUser();
     
     if (error) {
       console.error('Supabase get user error:', error);
