@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- Supabase client library -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   // Supabase configuration (replace with your actual project URL and anon key)
   // Refer to SUPABASE_SETUP.md for instructions on how to get these credentials.
@@ -21,7 +21,11 @@
   window.isServerMode = false;
 
   try {
-    if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
+    // Check if Supabase library is loaded
+    if (typeof Supabase === 'undefined') {
+      console.warn('Supabase library not loaded. Running in localStorage-only mode.');
+      window.isServerMode = false;
+    } else if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
       supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       window.supabase = supabaseClient; // Make it globally accessible
       console.log('Supabase client initialized successfully!');
