@@ -975,6 +975,7 @@ function initializeAutoBackup() {
     // Set up backup on data changes
     window.addEventListener('beforeunload', () => {
       performAutoBackup();
+      cleanupRealtimeSync();
     });
     
     console.log('Automatic backup system initialized');
@@ -1590,6 +1591,151 @@ async function verifyStorageIntegrity() {
   } catch (e) { return false; }
 }
 
+// Real-time synchronization with Supabase
+let realtimeSubscriptions = [];
+
+async function setupRealtimeSync() {
+  if (!window.supabase) {
+    console.warn('Supabase not available for real-time sync');
+    return;
+  }
+
+  console.log('Setting up real-time synchronization...');
+
+  // Clear existing subscriptions
+  realtimeSubscriptions.forEach(subscription => {
+    if (subscription && subscription.unsubscribe) {
+      subscription.unsubscribe();
+    }
+  });
+  realtimeSubscriptions = [];
+
+  try {
+    // Subscribe to unpaid_bills changes
+    const unpaidSubscription = window.supabase
+      .channel('unpaid_bills_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'unpaid_bills' },
+        (payload) => handleRealtimeUpdate('unpaid', payload)
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Real-time sync active for unpaid_bills');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Real-time sync error for unpaid_bills');
+        }
+      });
+
+    // Subscribe to vendor_customers changes
+    const vendorSubscription = window.supabase
+      .channel('vendor_customers_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'vendor_customers' },
+        (payload) => handleRealtimeUpdate('vendor', payload)
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Real-time sync active for vendor_customers');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Real-time sync error for vendor_customers');
+        }
+      });
+
+    realtimeSubscriptions.push(unpaidSubscription, vendorSubscription);
+    console.log('Real-time synchronization setup complete');
+
+  } catch (error) {
+    console.error('Failed to setup real-time sync:', error);
+  }
+}
+
+function handleRealtimeUpdate(source, payload) {
+  console.log(`Real-time update received for ${source}:`, payload);
+
+  const { eventType, new: newRecord, old: oldRecord } = payload;
+  
+  switch (eventType) {
+    case 'INSERT':
+      handleRealtimeInsert(source, newRecord);
+      break;
+    case 'UPDATE':
+      handleRealtimeUpdateRecord(source, newRecord, oldRecord);
+      break;
+    case 'DELETE':
+      handleRealtimeDelete(source, oldRecord);
+      break;
+  }
+}
+
+function handleRealtimeInsert(source, newRecord) {
+  // Convert Supabase format back to JS format
+  const jsRecord = {
+    ...newRecord,
+    createdAt: newRecord.created_at ? new Date(newRecord.created_at).getTime() : Date.now(),
+    updatedAt: newRecord.updated_at ? new Date(newRecord.updated_at).getTime() : Date.now()
+  };
+
+  const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+  
+  // Check if record already exists (avoid duplicates)
+  const existingIndex = list.findIndex(c => c.id === jsRecord.id);
+  if (existingIndex === -1) {
+    list.push(jsRecord);
+    console.log(`Added new ${source} customer via real-time sync: ${jsRecord.name}`);
+    notify(`New customer added: ${jsRecord.name}`, 'info');
+    renderAll();
+  }
+}
+
+function handleRealtimeUpdateRecord(source, newRecord, oldRecord) {
+  // Convert Supabase format back to JS format
+  const jsRecord = {
+    ...newRecord,
+    createdAt: newRecord.created_at ? new Date(newRecord.created_at).getTime() : Date.now(),
+    updatedAt: newRecord.updated_at ? new Date(newRecord.updated_at).getTime() : Date.now()
+  };
+
+  const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+  const index = list.findIndex(c => c.id === jsRecord.id);
+  
+  if (index !== -1) {
+    // Check if this is an update from another device (compare timestamps)
+    const localRecord = list[index];
+    const remoteTimestamp = jsRecord.updatedAt || 0;
+    const localTimestamp = localRecord.updatedAt || 0;
+    
+    if (remoteTimestamp > localTimestamp) {
+      list[index] = jsRecord;
+      console.log(`Updated ${source} customer via real-time sync: ${jsRecord.name}`);
+      notify(`Customer updated: ${jsRecord.name}`, 'info');
+      renderAll();
+    }
+  }
+}
+
+function handleRealtimeDelete(source, oldRecord) {
+  const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+  const index = list.findIndex(c => c.id === oldRecord.id);
+  
+  if (index !== -1) {
+    const deletedCustomer = list[index];
+    list.splice(index, 1);
+    console.log(`Deleted ${source} customer via real-time sync: ${deletedCustomer.name}`);
+    notify(`Customer deleted: ${deletedCustomer.name}`, 'info');
+    renderAll();
+  }
+}
+
+function cleanupRealtimeSync() {
+  console.log('Cleaning up real-time subscriptions...');
+  realtimeSubscriptions.forEach(subscription => {
+    if (subscription && subscription.unsubscribe) {
+      subscription.unsubscribe();
+    }
+  });
+  realtimeSubscriptions = [];
+}
+
 // ── DATA LOADING ──
 async function loadAll() {
   try {
@@ -1615,6 +1761,12 @@ async function loadAll() {
     });
     
     console.log(`Data loaded successfully: ${unpaidBills.length} unpaid, ${vendorCustomers.length} vendor, ${deletedCustomers.length} deleted`);
+    
+    // Setup real-time synchronization if Supabase is available
+    if (window.isServerMode && window.supabase) {
+      setupRealtimeSync();
+    }
+    
     return true;
   } catch (error) {
     console.error('Error in loadAll:', error);
