@@ -1482,7 +1482,7 @@ async function syncToSupabase(localStorageKey, data) {
     }
 
     // Now insert the new data
-    const { data: insertedData, error: insertError } = await window.supabase
+    const { error: insertError } = await window.supabase
       .from(tableName)
       .insert(formattedData);
 
