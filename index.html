@@ -4061,7 +4061,7 @@ function mergeCustomerArrays(localArray, cloudArray) {
       const mergedCustomer = {
         ...localCustomer,
         // Use cloud data if it's newer
-        ...((cloudCustomer.updatedAt || cloudCustomer.createdAt) > (localCustomer.updatedAt || localCustomer.createdAt)) ? {
+        ...((cloudCustomer.updatedAt || cloudCustomer.createdAt) > (localCustomer.updatedAt || localCustomer.createdAt) ? {
           amount: cloudCustomer.amount,
           payments: cloudCustomer.payments || localCustomer.payments,
           credits: cloudCustomer.credits || localCustomer.credits
