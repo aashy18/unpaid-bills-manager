@@ -1454,7 +1454,7 @@ async function syncToSupabase(localStorageKey, data) {
         id: item.id,
         name: item.name,
         number: item.number,
-        balance: parseFloat(item.balance !== undefined ? item.balance : (item.amount || 0)),
+        balance: parseFloat(item.balance || 0),
         payments: item.payments || [],
         credits: item.credits || []
       };
@@ -1475,7 +1475,6 @@ async function syncToSupabase(localStorageKey, data) {
       .from(tableName)
       .delete()
       .neq('id', 'dummy_id_to_delete_all_for_user'); // Placeholder, RLS should filter by user
-    await window.supabase.from(tableName).delete().neq('id', 'dummy_id_to_delete_all_for_user');
 
     if (deleteError) {
       console.error(`Error deleting existing data from Supabase table ${tableName}:`, deleteError);
@@ -1485,7 +1484,6 @@ async function syncToSupabase(localStorageKey, data) {
     // Now insert the new data
     const { data: insertedData, error: insertError } = await window.supabase
       .from(tableName)
-      .insert(data);
       .insert(formattedData);
 
     if (insertError) {
@@ -1509,7 +1507,6 @@ async function loadFromSupabase(localStorageKey) {
   try {
     const { data, error } = await window.supabase.from(tableName).select('*');
     if (error) throw error;
-    return data;
     
     // Map back to JS format (camelCase and specific field names)
     return data.map(item => ({
