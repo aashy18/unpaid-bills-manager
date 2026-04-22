@@ -1529,7 +1529,23 @@ async function verifyStorageIntegrity() {
   } catch (e) { return false; }
 }
 
-    // Ensure all customers have required arrays
+// ── DATA LOADING ──
+async function loadAll() {
+  try {
+    console.log('Loading data from storage...');
+    
+    // Check for and restore from auto-backup if needed
+    await checkAndRestoreFromBackup();
+    
+    // Verify storage integrity first
+    await verifyStorageIntegrity();
+    
+    // Load data from storage (handles Supabase fallback)
+    unpaidBills = await loadCustomersFromStorage('unpaid');
+    vendorCustomers = await loadCustomersFromStorage('vendor');
+    deletedCustomers = await loadDeletedCustomersFromStorage();
+    
+    // Ensure all customers have required arrays and IDs
     const allCustomers = [...unpaidBills, ...vendorCustomers];
     allCustomers.forEach(customer => {
       if (!customer.payments) customer.payments = [];
@@ -1540,13 +1556,35 @@ async function verifyStorageIntegrity() {
     console.log(`Data loaded successfully: ${unpaidBills.length} unpaid, ${vendorCustomers.length} vendor, ${deletedCustomers.length} deleted`);
     return true;
   } catch (error) {
-    console.error('Error loading data from localStorage:', error);
-    // Initialize empty arrays if loading fails
-    unpaidBills = [];
-    vendorCustomers = [];
-    deletedCustomers = [];
-    notify('Failed to load data. Starting with empty data.', 'error');
+    console.error('Error in loadAll:', error);
+    // Initialize empty arrays if loading fails to prevent UI crashes
+    unpaidBills = unpaidBills.length ? unpaidBills : [];
+    vendorCustomers = vendorCustomers.length ? vendorCustomers : [];
+    deletedCustomers = deletedCustomers.length ? deletedCustomers : [];
+    notify('Failed to load data. Using available local data.', 'error');
     return false;
+  }
+}
+
+async function saveCustomerToStorage(customer, source) {
+  try {
+    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+    
+    if (!customer.createdAt) customer.createdAt = Date.now();
+    customer.updatedAt = Date.now();
+    
+    const index = list.findIndex(c => c.id === customer.id);
+    if (index !== -1) {
+      list[index] = customer;
+    } else {
+      list.push(customer);
+    }
+    
+    return saveToStorage(key, list);
+  } catch (error) {
+    console.error('Error in saveCustomerToStorage:', error);
+    throw error;
   }
 }
 
