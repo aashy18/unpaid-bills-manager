@@ -1044,125 +1044,65 @@ function cleanupOldBackups() {
 // - vendorCustomers: Vendor customer data  
 // - deletedCustomers: Soft-deleted customer data
 // - appUsers: User authentication data
+// - appUsers: User authentication data
 
-// ââ LocalStorage CRUD Functions ââ
-
-// Load customers from localStorage
-async function loadCustomersFromStorage(source) {
+function saveToStorage(key, data) {
   try {
-    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-    const data = localStorage.getItem(key);
-    
-    if (!data) {
-      console.log(`No data found for ${source}, returning empty array`);
-      return [];
-    }
-    
-    const customers = JSON.parse(data);
-    
-    // Validate that it's an array
-    if (!Array.isArray(customers)) {
-      console.error(`Data for ${source} is not an array, resetting to empty array`);
-      localStorage.setItem(key, JSON.stringify([]));
-      return [];
-    }
-    
-    console.log(`Loaded ${customers.length} customers from localStorage (${source})`);
-    return customers;
-  } catch (error) {
-    console.error(`Error loading customers from localStorage (${source}):`, error);
-    // Reset to empty array on error
-    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-    localStorage.setItem(key, JSON.stringify([]));
-    return [];
-  }
-}
-
-// Save customer to localStorage
-async function saveCustomerToStorage(customer, source) {
-  try {
-    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-    const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
-    
-    // Add timestamp if not present
-    if (!customer.createdAt) {
-      customer.createdAt = Date.now();
-    }
-    customer.updatedAt = Date.now();
-    
-    // Update or add customer
-    const index = list.findIndex(c => c.id === customer.id);
-    if (index !== -1) {
-      list[index] = customer;
-      console.log(`Updated existing customer ${customer.name} in ${source}`);
-    } else {
-      list.push(customer);
-      console.log(`Added new customer ${customer.name} to ${source}`);
-    }
-    
-    // Save to localStorage
-    const saved = saveToStorage(key, list);
-    if (saved) {
-      console.log(`Customer saved to localStorage successfully (${source})`);
-      return customer;
-    } else {
-      throw new Error('Failed to save customer to localStorage');
-    }
-  } catch (error) {
-    console.error('Error saving customer to localStorage:', error);
-    throw error;
-  }
-}
-
-// Load deleted customers from localStorage
-async function loadDeletedCustomersFromStorage() {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.deleted);
-    
-    if (!data) {
-      console.log('No deleted customers data found, returning empty array');
-      return [];
-    }
-    
-    const customers = JSON.parse(data);
-    
-    // Validate that it's an array
-    if (!Array.isArray(customers)) {
-      console.error('Deleted customers data is not an array, resetting to empty array');
-      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify([]));
-      return [];
-    }
-    
-    console.log(`Loaded ${customers.length} deleted customers from localStorage`);
-    return customers;
-  } catch (error) {
-    console.error('Error loading deleted customers from localStorage:', error);
-    // Reset to empty array on error
-    localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify([]));
-    return [];
-  }
-}
-
-// ââ Data Integrity Check ââ
-async function verifyStorageIntegrity() {
-  console.log('Verifying storage integrity...');
-  
-  try {
-    // Test that we can read and write to localStorage
-    const testData = { test: true, timestamp: Date.now() };
-    localStorage.setItem('integrity_test', JSON.stringify(testData));
-    const retrieved = JSON.parse(localStorage.getItem('integrity_test'));
-    localStorage.removeItem('integrity_test');
-    
-    if (!retrieved || retrieved.test !== true) {
-      console.error('Storage integrity test failed - localStorage not working properly');
+    // Validate data before saving
+    if (data === null || data === undefined) {
+      console.error('Attempted to save null/undefined data for key:', key);
+      notify('Data validation error. Please try again.', 'error');
       return false;
     }
     
-    console.log('Storage integrity test passed');
+    // Create a backup before saving
+    const backupKey = key + '_backup';
+    const currentData = localStorage.getItem(key);
+    if (currentData) {
+      localStorage.setItem(backupKey, currentData);
+    }
+    
+    // Stringify and save to localStorage (for offline support)
+    const jsonString = JSON.stringify(data);
+    localStorage.setItem(key, jsonString);
+    
+    // Verify the save was successful
+    const verifyData = localStorage.getItem(key);
+    if (verifyData !== jsonString) {
+      throw new Error('Save verification failed');
+    }
+    
+    console.log('Successfully saved data for key:', key, 'Size:', jsonString.length, 'bytes');
+    
+    // Sync to server if in server mode
+    if (isServerMode && window.supabase) {
+      console.log(`Attempting to sync data for key: ${key} to Supabase`);
+      syncToSupabase(key, data).catch(err => console.error('Background Supabase sync failed:', err)); // Non-blocking sync
+    }
+    
     return true;
+    
   } catch (error) {
-    console.error('Storage integrity test failed:', error);
+    console.error('Failed to save to localStorage:', error);
+    
+    // Attempt to restore from backup if available
+    const backupKey = key + '_backup';
+    const backupData = localStorage.getItem(backupKey);
+    if (backupData) {
+      try {
+        localStorage.setItem(key, backupData);
+        notify('Error occurred. Previous data restored.', 'warning');
+      } catch (restoreError) {
+        console.error('Failed to restore backup:', restoreError);
+        notify('Critical: Data could not be saved or restored. Please export your data immediately.', 'error');
+      }
+    } else {
+      if (error.name === 'QuotaExceededError') {
+        notify('Storage quota exceeded. Please backup and clear some data.', 'error');
+      } else {
+        notify('Failed to save data. Please try again.', 'error');
+      }
+    }
     return false;
   }
 }
@@ -1292,28 +1232,6 @@ async function signOutUser() {
   }
 }
 
-async function getCurrentUser() {
-  try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, checking localStorage');
-      return getCurrentUserLocalStorage();
-    }
-    
-    const { data: { user }, error } = await window.supabase.auth.getUser();
-    
-    if (error) {
-      console.error('Supabase get user error:', error);
-      return getCurrentUserLocalStorage();
-    }
-    
-    console.log('Current user retrieved from Supabase');
-    return user;
-  } catch (error) {
-    console.error('Error getting current user:', error);
-    return getCurrentUserLocalStorage();
-  }
-}
-
 // Fallback localStorage functions
 async function signUpUserLocalStorage(email, password, fullName) {
   console.log('Using localStorage signup fallback');
@@ -1353,139 +1271,6 @@ const SUPABASE_TABLE_MAP = {
   [STORAGE_KEYS.vendor]: 'vendor_customers',
   [STORAGE_KEYS.deleted]: 'deleted_customers'
 };
-
-function saveToStorage(key, data) {
-  try {
-    // Validate data before saving
-    if (data === null || data === undefined) {
-      console.error('Attempted to save null/undefined data for key:', key);
-      notify('Data validation error. Please try again.', 'error');
-      return false;
-    }
-    
-    // Create a backup before saving
-    const backupKey = key + '_backup';
-    const currentData = localStorage.getItem(key);
-    if (currentData) {
-      localStorage.setItem(backupKey, currentData);
-    }
-    
-    // Stringify and save to localStorage (for offline support)
-    const jsonString = JSON.stringify(data);
-    localStorage.setItem(key, jsonString);
-    
-    // Verify the save was successful
-    const verifyData = localStorage.getItem(key);
-    if (verifyData !== jsonString) {
-      throw new Error('Save verification failed');
-    }
-    
-    console.log('Successfully saved data for key:', key, 'Size:', jsonString.length, 'bytes');
-    
-    // Sync to server if in server mode
-    if (isServerMode && window.supabase) {
-      console.log(`Attempting to sync data for key: ${key} to Supabase`);
-      syncToSupabase(key, data).catch(err => console.error('Background Supabase sync failed:', err)); // Non-blocking sync
-    }
-    
-    return true;
-    
-  } catch (error) {
-    console.error('Failed to save to localStorage:', error);
-    
-    // Attempt to restore from backup if available
-    const backupKey = key + '_backup';
-    const backupData = localStorage.getItem(backupKey);
-    if (backupData) {
-      try {
-        localStorage.setItem(key, backupData);
-        notify('Error occurred. Previous data restored.', 'warning');
-      } catch (restoreError) {
-        console.error('Failed to restore backup:', restoreError);
-        notify('Critical: Data could not be saved or restored. Please export your data immediately.', 'error');
-      }
-    } else {
-      if (error.name === 'QuotaExceededError') {
-        notify('Storage quota exceeded. Please backup and clear some data.', 'error');
-      } else {
-        notify('Failed to save data. Please try again.', 'error');
-      }
-    }
-    return false;
-  }
-}
-
-async function loadFromStorage(key) {
-  try {
-    // Try loading from Supabase first if in server mode
-    if (isServerMode && window.supabase) {
-      console.log(`Attempting to load data for key: ${key} from Supabase`);
-      const supabaseData = await loadFromSupabase(key);
-      if (supabaseData && supabaseData.length > 0) {
-        console.log(`Successfully loaded ${supabaseData.length} items from Supabase for key: ${key}`);
-        // Also save to localStorage for offline access
-        localStorage.setItem(key, JSON.stringify(supabaseData));
-        return supabaseData;
-      } else {
-        console.log(`No data found in Supabase for key: ${key}, falling back to localStorage.`);
-      }
-    }
-
-    // Fallback to localStorage
-    // Existing localStorage loading logic
-    const data = localStorage.getItem(key);
-    if (!data) {
-      console.log('No data found for key:', key);
-      return [];
-    }
-    
-    // Parse and validate the data
-    const parsedData = JSON.parse(data);
-    
-    // Validate it's an array
-    if (!Array.isArray(parsedData)) {
-      console.error('Data for key', key, 'is not an array:', typeof parsedData);
-      // Try to restore from backup
-      const backupKey = key + '_backup';
-      const backupData = localStorage.getItem(backupKey);
-      if (backupData) {
-        console.log('Attempting to restore from backup for key:', key);
-        const backupParsed = JSON.parse(backupData);
-        if (Array.isArray(backupParsed)) {
-          localStorage.setItem(key, backupData);
-          return backupParsed;
-        }
-      }
-      return [];
-    }
-    
-    console.log('Successfully loaded data for key:', key, 'Items:', parsedData.length);
-    return parsedData;
-    
-  } catch (error) {
-    console.error('Failed to load from localStorage:', error);
-    
-    // Attempt to restore from backup
-    const backupKey = key + '_backup';
-    const backupData = localStorage.getItem(backupKey);
-    if (backupData) {
-      try {
-        console.log('Attempting to restore from backup for key:', key);
-        const backupParsed = JSON.parse(backupData);
-        if (Array.isArray(backupParsed)) {
-          localStorage.setItem(key, backupData);
-          notify('Data restored from backup due to corruption.', 'warning');
-          return backupParsed;
-        }
-      } catch (backupError) {
-        console.error('Backup data also corrupted:', backupError);
-      }
-    }
-    
-    notify('Data corruption detected. Some data may be lost.', 'error');
-    return [];
-  }
-}
 
 function loadUsers() {
   try {
@@ -1704,35 +1489,45 @@ async function loadFromSupabase(localStorageKey) {
   }
 }
 
-// ── DATA LOADING ──
-async function loadAll() {
+async function loadFromStorage(key) {
   try {
-    console.log('Loading data from localStorage...');
-    
-    // Check for and restore from auto-backup if needed
-    await checkAndRestoreFromBackup();
-    
-    // Verify storage integrity first
-    const integrityPassed = await verifyStorageIntegrity();
-    if (!integrityPassed) {
-      console.error('Storage integrity check failed, data may be lost');
-      notify('Storage integrity check failed. Some data may be lost.', 'warning');
+    // Try loading from Supabase first if in server mode
+    if (isServerMode && window.supabase) {
+      console.log(`Attempting to load data for key: ${key} from Supabase`);
+      const supabaseData = await loadFromSupabase(key);
+      if (supabaseData && supabaseData.length > 0) {
+        console.log(`Successfully loaded ${supabaseData.length} items from Supabase for key: ${key}`);
+        // Also save to localStorage for offline access
+        localStorage.setItem(key, JSON.stringify(supabaseData));
+        return supabaseData;
+      } else {
+        console.log(`No data found in Supabase for key: ${key}, falling back to localStorage.`);
+      }
     }
+
+    // Fallback to localStorage
+    const data = localStorage.getItem(key);
+    if (!data) return [];
     
-    // Load data from localStorage
-    // These functions are now updated to try Supabase first, then localStorage
-    unpaidBills = await loadCustomersFromStorage('unpaid'); // This is now async
-    vendorCustomers = await loadCustomersFromStorage('vendor'); // This is now async
-    deletedCustomers = await loadDeletedCustomersFromStorage(); // This is now async
+    const parsedData = JSON.parse(data);
+    if (!Array.isArray(parsedData)) return [];
     
-    // If Supabase is active and local data is empty, try to load from Supabase again
-    // This handles cases where initial load might have failed but Supabase is now ready
-    if (isServerMode && window.supabase && unpaidBills.length === 0 && vendorCustomers.length === 0) {
-      console.log('Local data is empty, attempting a full load from Supabase...');
-      try {
-        const supabaseUnpaid = await loadFromSupabase(STORAGE_KEYS.unpaid);
-        const supabaseVendor = await loadFromSupabase(STORAGE_KEYS.vendor);
-        const supabaseDeleted = await loadFromSupabase(STORAGE_KEYS.deleted);
+    return parsedData;
+  } catch (error) {
+    console.error('Failed to load from storage:', error);
+    return [];
+  }
+}
+
+async function verifyStorageIntegrity() {
+  try {
+    const testData = { test: true };
+    localStorage.setItem('integrity_test', JSON.stringify(testData));
+    const retrieved = JSON.parse(localStorage.getItem('integrity_test'));
+    localStorage.removeItem('integrity_test');
+    return !!retrieved;
+  } catch (e) { return false; }
+}
 
         if (supabaseUnpaid) unpaidBills = supabaseUnpaid;
         if (supabaseVendor) vendorCustomers = supabaseVendor;
