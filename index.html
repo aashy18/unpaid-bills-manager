@@ -8,9 +8,8 @@
 <!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<!-- Supabase script removed - using localStorage for reliable offline functionality -->
 <!-- Supabase client library -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7"></script>
 <script>
   // Supabase configuration (replace with your actual project URL and anon key)
   // Refer to SUPABASE_SETUP.md for instructions on how to get these credentials.
@@ -1535,7 +1534,7 @@ async function loadAll() {
     console.log('Loading data from storage...');
     
     // Check for and restore from auto-backup if needed
-    await checkAndRestoreFromBackup();
+    checkAndRestoreFromBackup();
     
     // Verify storage integrity first
     await verifyStorageIntegrity();
