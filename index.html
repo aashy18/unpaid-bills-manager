@@ -18,20 +18,22 @@
   const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY'; // Replace with your anon public key
 
   let supabaseClient = null;
+  // Declare as a property of window to ensure it's globally accessible across script tags
+  window.isServerMode = false;
 
   try {
     if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
       supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       window.supabase = supabaseClient; // Make it globally accessible
       console.log('Supabase client initialized successfully!');
-      isServerMode = true; // Set server mode to true if Supabase is initialized
+      window.isServerMode = true;
     } else {
       console.warn('Supabase credentials not configured. Running in localStorage-only mode.');
-      isServerMode = false;
+      window.isServerMode = false;
     }
   } catch (error) {
     console.error('Error initializing Supabase client:', error);
-    isServerMode = false;
+    window.isServerMode = false;
   }
 </script>
 <style>
@@ -1176,7 +1178,6 @@ let currentUser = null;
 
 // ── REAL-TIME SYNC ──
 let socket = null;
-let isServerMode = false;
 let syncInProgress = false;
 
 // Initialize Socket.IO connection (temporarily disabled)
@@ -1414,7 +1415,7 @@ function saveToStorage(key, data) {
   }
 }
 
-function loadFromStorage(key) {
+async function loadFromStorage(key) {
   try {
     // Try loading from Supabase first if in server mode
     if (isServerMode && window.supabase) {
