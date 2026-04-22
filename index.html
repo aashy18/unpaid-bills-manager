@@ -921,12 +921,7 @@ function initializeStorage() {
   }
 }
 
-// Initialize storage when page loads
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeStorage);
-} else {
-  initializeStorage();
-}
+// Storage initialization will be handled in main init function
 
 // ââ Data Storage Architecture ââ
 // All application data is stored in localStorage for reliable offline functionality:
@@ -2031,6 +2026,13 @@ function closeAddModal(){
 
 // Initialize the app with login check
 document.addEventListener('DOMContentLoaded',()=>{
+  // Initialize storage first
+  const storageReady = initializeStorage();
+  if (!storageReady) {
+    console.error('Failed to initialize storage on page load');
+    return;
+  }
+  
   // Check for existing session
   const storedUser = localStorage.getItem(CURRENT_USER_KEY);
   
@@ -2046,7 +2048,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         localStorage.removeItem(CURRENT_USER_KEY);
         console.log('Session expired due to timeout');
       } else {
-        // Validate that the user still exists in the system
+        // Validate that user still exists in the system
         const users = loadUsers();
         const validUser = users.find(u => u.username === sessionData.username && u.password === sessionData.password);
         
@@ -2062,6 +2064,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedSessionData));
           document.getElementById('loginOverlay').style.display = 'none';
           console.log('User session restored:', validUser.username);
+          
+          // Initialize app data
           init();
         } else {
           // User no longer exists or password changed, clear session
