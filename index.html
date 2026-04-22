@@ -1361,9 +1361,16 @@ function validateDataIntegrity() {
   
   const issues = [];
   
-  // Check unpaid bills
+  // Check unpaid bills and migrate legacy data
   try {
     unpaidBills.forEach((customer, index) => {
+      // Migrate legacy data: if amount exists but balance doesn't, copy amount to balance
+      if (customer.amount !== undefined && customer.balance === undefined) {
+        customer.balance = customer.amount;
+        delete customer.amount;
+        console.log(`Migrated unpaid customer ${customer.id} from amount to balance`);
+      }
+      
       if (!customer.id) {
         issues.push(`Unpaid customer at index ${index} missing ID`);
         return;
@@ -1385,9 +1392,16 @@ function validateDataIntegrity() {
     issues.push(`Error validating unpaid bills: ${error.message}`);
   }
   
-  // Check vendor customers
+  // Check vendor customers and migrate legacy data
   try {
     vendorCustomers.forEach((customer, index) => {
+      // Migrate legacy data: if amount exists but balance doesn't, copy amount to balance
+      if (customer.amount !== undefined && customer.balance === undefined) {
+        customer.balance = customer.amount;
+        delete customer.amount;
+        console.log(`Migrated vendor customer ${customer.id} from amount to balance`);
+      }
+      
       if (!customer.id) {
         issues.push(`Vendor customer at index ${index} missing ID`);
         return;
@@ -1416,12 +1430,26 @@ function validateDataIntegrity() {
     issues.push(`Duplicate customer IDs found: ${duplicateIds.join(', ')}`);
   }
   
+  // Save migrated data if any migrations occurred
+  const migratedData = unpaidBills.some(c => c.balance !== undefined && !c.amount) || 
+                      vendorCustomers.some(c => c.balance !== undefined && !c.amount);
+  
+  if (migratedData) {
+    console.log('Saving migrated data to localStorage...');
+    localStorage.setItem(STORAGE_KEYS.unpaid, JSON.stringify(unpaidBills));
+    localStorage.setItem(STORAGE_KEYS.vendor, JSON.stringify(vendorCustomers));
+    console.log('Migrated data saved successfully');
+  }
+  
   if (issues.length > 0) {
-    console.warn('⚠️ Data integrity issues found:', issues);
+    console.warn('Data integrity issues found:', issues);
     notify(`Data integrity issues detected. Check console for details.`, 'warning');
     return false;
   } else {
-    console.log('✅ Data integrity check passed');
+    console.log('Data integrity check passed' + (migratedData ? ' (data migrated)' : ''));
+    if (migratedData) {
+      notify('Legacy data successfully migrated to new format.', 'success');
+    }
     return true;
   }
 }
