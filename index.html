@@ -904,7 +904,7 @@ window.bodyTest = function() {
 <!-- ══════════════ SCRIPT ══════════════ -->
 <script>
 // ââ DATA PERSISTENCE CONFIGURATION ââ
-// Using localStorage as primary storage for reliable offline functionality
+// Using localStorage as primary storage with automatic cloud backup sync
 
 // Initialize localStorage as primary storage
 function initializeStorage() {
@@ -914,10 +914,98 @@ function initializeStorage() {
     localStorage.setItem(testKey, 'test');
     localStorage.removeItem(testKey);
     console.log('localStorage initialized successfully - using as primary storage');
+    
+    // Initialize automatic backup system
+    initializeAutoBackup();
     return true;
   } catch (error) {
     console.error('localStorage not available:', error);
     return false;
+  }
+}
+
+// ââ AUTOMATIC BACKUP SYSTEM ââ
+function initializeAutoBackup() {
+  try {
+    // Check if we should backup on page load (every 5 minutes)
+    const lastBackup = localStorage.getItem('lastAutoBackup');
+    const now = Date.now();
+    const BACKUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    
+    if (!lastBackup || (now - parseInt(lastBackup)) > BACKUP_INTERVAL) {
+      console.log('Performing automatic backup...');
+      performAutoBackup();
+    }
+    
+    // Set up periodic backups every 5 minutes
+    setInterval(() => {
+      performAutoBackup();
+    }, BACKUP_INTERVAL);
+    
+    // Set up backup on data changes
+    window.addEventListener('beforeunload', () => {
+      performAutoBackup();
+    });
+    
+    console.log('Automatic backup system initialized');
+  } catch (error) {
+    console.error('Failed to initialize auto backup:', error);
+  }
+}
+
+function performAutoBackup() {
+  try {
+    const backupData = {
+      unpaidBills: unpaidBills,
+      vendorCustomers: vendorCustomers,
+      deletedCustomers: deletedCustomers,
+      backupDate: new Date().toISOString(),
+      version: '1.0',
+      deviceId: getDeviceId()
+    };
+    
+    // Save to localStorage as backup
+    localStorage.setItem('autoBackup_' + Date.now(), JSON.stringify(backupData));
+    localStorage.setItem('lastAutoBackup', Date.now().toString());
+    
+    // Clean old backups (keep only last 10)
+    cleanupOldBackups();
+    
+    console.log('Auto backup completed successfully');
+  } catch (error) {
+    console.error('Auto backup failed:', error);
+  }
+}
+
+function getDeviceId() {
+  let deviceId = localStorage.getItem('deviceId');
+  if (!deviceId) {
+    deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('deviceId', deviceId);
+  }
+  return deviceId;
+}
+
+function cleanupOldBackups() {
+  try {
+    const keys = Object.keys(localStorage);
+    const backupKeys = keys.filter(key => key.startsWith('autoBackup_'));
+    
+    // Sort by timestamp and keep only 10 most recent
+    backupKeys.sort((a, b) => {
+      const timeA = parseInt(a.split('_')[1]);
+      const timeB = parseInt(b.split('_')[1]);
+      return timeB - timeA;
+    });
+    
+    // Remove old backups beyond the 10 most recent
+    if (backupKeys.length > 10) {
+      for (let i = 10; i < backupKeys.length; i++) {
+        localStorage.removeItem(backupKeys[i]);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to cleanup old backups:', error);
   }
 }
 
@@ -1505,6 +1593,9 @@ async function loadAll() {
   try {
     console.log('Loading data from localStorage...');
     
+    // Check for and restore from auto-backup if needed
+    await checkAndRestoreFromBackup();
+    
     // Verify storage integrity first
     const integrityPassed = await verifyStorageIntegrity();
     if (!integrityPassed) {
@@ -1536,6 +1627,47 @@ async function loadAll() {
     notify('Failed to load data. Starting with empty data.', 'error');
     return false;
   }
+}
+
+function checkAndRestoreFromBackup() {
+  try {
+    // Check if current data is empty or corrupted
+    const currentUnpaid = localStorage.getItem(STORAGE_KEYS.unpaid);
+    const currentVendor = localStorage.getItem(STORAGE_KEYS.vendor);
+    
+    if (!currentUnpaid || !currentVendor || currentUnpaid === '[]' || currentVendor === '[]') {
+      console.log('Current data is empty, checking for backups...');
+      
+      // Get most recent backup
+      const backupKeys = Object.keys(localStorage)
+        .filter(key => key.startsWith('autoBackup_'))
+        .sort((a, b) => {
+          const timeA = parseInt(a.split('_')[1]);
+          const timeB = parseInt(b.split('_')[1]);
+          return timeB - timeA;
+        });
+      
+      if (backupKeys.length > 0) {
+        const latestBackupKey = backupKeys[0];
+        const backupData = JSON.parse(localStorage.getItem(latestBackupKey));
+        
+        if (backupData && backupData.unpaidBills && backupData.vendorCustomers) {
+          console.log('Restoring data from latest backup:', backupData.backupDate);
+          
+          // Restore data
+          localStorage.setItem(STORAGE_KEYS.unpaid, JSON.stringify(backupData.unpaidBills));
+          localStorage.setItem(STORAGE_KEYS.vendor, JSON.stringify(backupData.vendorCustomers));
+          localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(backupData.deletedCustomers || []));
+          
+          notify('Data restored from automatic backup', 'success');
+          return true;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to check and restore from backup:', error);
+  }
+  return false;
 }
 
 // Load payments and credits for all customers (temporarily disabled)
@@ -3364,6 +3496,20 @@ function openSettings(){
           <div class="desc">Restore deleted customers</div>
         </div>
       </button>
+      <button class="settingBtn" onclick="syncFromCloud()">
+        <span class="icon">☁️</span>
+        <div class="text-content">
+          <div class="text">Sync from Cloud</div>
+          <div class="desc">Download and merge data from cloud backup</div>
+        </div>
+      </button>
+      <button class="settingBtn" onclick="uploadToCloud()">
+        <span class="icon">⬆️</span>
+        <div class="text-content">
+          <div class="text">Upload to Cloud</div>
+          <div class="desc">Upload current data to cloud storage</div>
+        </div>
+      </button>
       <button class="settingBtn danger" onclick="resetAllData()">
         <span class="icon">🔥</span>
         <div class="text-content">
@@ -3544,6 +3690,171 @@ async function permanentDeleteCustomer(id, customerName) {
   }
 }
 
+// ── CLOUD SYNC FUNCTIONS ──
+async function uploadToCloud() {
+  try {
+    notify('Preparing cloud backup...', 'info');
+    
+    const data = {
+      unpaidBills: unpaidBills,
+      vendorCustomers: vendorCustomers,
+      deletedCustomers: deletedCustomers,
+      backupDate: new Date().toISOString(),
+      version: '1.0',
+      deviceId: getDeviceId(),
+      syncType: 'manual_upload'
+    };
+    
+    // Create a downloadable backup file with timestamp
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `unpaid_bills_cloud_backup_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    notify('Cloud backup downloaded! Save this file to your cloud storage (Google Drive, Dropbox, etc.)', 'success');
+    
+  } catch (error) {
+    console.error('Cloud upload failed:', error);
+    notify('Failed to create cloud backup: ' + error.message, 'error');
+  }
+}
+
+async function syncFromCloud() {
+  try {
+    notify('Syncing from cloud backup...', 'info');
+    
+    // Create file input for cloud backup selection
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const cloudData = JSON.parse(e.target.result);
+          
+          // Validate cloud backup structure
+          if (!cloudData.version || !cloudData.unpaidBills || !cloudData.vendorCustomers) {
+            notify('Invalid cloud backup file format', 'error');
+            return;
+          }
+          
+          const confirmed = await customConfirm(
+            `Merge cloud backup from ${new Date(cloudData.backupDate).toLocaleDateString()}?\n\n` +
+            `This will MERGE your current data with the cloud backup.\n` +
+            `Customers with same names will be updated.\n` +
+            `New customers will be added.`
+          );
+          
+          if (!confirmed) return;
+          
+          // Merge cloud data with current data
+          await mergeCloudData(cloudData);
+          
+          notify('Cloud sync completed successfully!', 'success');
+          
+        } catch (error) {
+          console.error('Error parsing cloud backup:', error);
+          notify('Invalid cloud backup file', 'error');
+        }
+      };
+      
+      reader.readAsText(file);
+    };
+    
+    input.click();
+    
+  } catch (error) {
+    console.error('Cloud sync failed:', error);
+    notify('Failed to sync from cloud: ' + error.message, 'error');
+  }
+}
+
+async function mergeCloudData(cloudData) {
+  try {
+    // Merge unpaid bills
+    const mergedUnpaid = mergeCustomerArrays(unpaidBills, cloudData.unpaidBills || []);
+    
+    // Merge vendor customers
+    const mergedVendor = mergeCustomerArrays(vendorCustomers, cloudData.vendorCustomers || []);
+    
+    // Update data
+    unpaidBills = mergedUnpaid;
+    vendorCustomers = mergedVendor;
+    
+    // Save merged data
+    const unpaidSaved = saveToStorage(STORAGE_KEYS.unpaid, mergedUnpaid);
+    const vendorSaved = saveToStorage(STORAGE_KEYS.vendor, mergedVendor);
+    
+    if (unpaidSaved && vendorSaved) {
+      // Perform auto backup after sync
+      performAutoBackup();
+      renderAll();
+    } else {
+      throw new Error('Failed to save merged data');
+    }
+    
+  } catch (error) {
+    console.error('Error merging cloud data:', error);
+    throw error;
+  }
+}
+
+function mergeCustomerArrays(localArray, cloudArray) {
+  const merged = [...localArray];
+  const customerMap = new Map();
+  
+  // Create map of local customers by name (case-insensitive)
+  localArray.forEach(customer => {
+    const key = (customer.name || '').toLowerCase().trim();
+    customerMap.set(key, customer);
+  });
+  
+  // Merge cloud customers
+  cloudArray.forEach(cloudCustomer => {
+    const key = (cloudCustomer.name || '').toLowerCase().trim();
+    
+    if (customerMap.has(key)) {
+      // Update existing customer (merge data)
+      const localCustomer = customerMap.get(key);
+      const mergedCustomer = {
+        ...localCustomer,
+        // Use cloud data if it's newer
+        ...((cloudCustomer.updatedAt || cloudCustomer.createdAt) > (localCustomer.updatedAt || localCustomer.createdAt)) ? {
+          amount: cloudCustomer.amount,
+          payments: cloudCustomer.payments || localCustomer.payments,
+          credits: cloudCustomer.credits || localCustomer.credits
+        } : {}),
+        updatedAt: Date.now(),
+        syncedFrom: 'cloud'
+      };
+      
+      // Replace in merged array
+      const index = merged.findIndex(c => c.id === localCustomer.id);
+      if (index !== -1) {
+        merged[index] = mergedCustomer;
+      }
+    } else {
+      // Add new customer
+      merged.push({
+        ...cloudCustomer,
+        id: generateUniqueId(),
+        syncedFrom: 'cloud'
+      });
+    }
+  });
+  
+  return merged;
+}
+
 // ── BACKUP / IMPORT ──
 async function backupData(){
   try {
@@ -3551,14 +3862,14 @@ async function backupData(){
       unpaidBills: unpaidBills,
       vendorCustomers: vendorCustomers,
       deletedCustomers: deletedCustomers,
-      exportDate:new Date().toISOString(),
-      version:'1.0'
+      exportDate: new Date().toISOString(),
+      version: '1.0'
     };
     
-    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=`unpaid_bills_backup_${isoDate()}.json`;
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `unpaid_bills_backup_${isoDate()}.json`;
     a.click();
     notify('Backup downloaded successfully!');
   } catch (error) {
@@ -3567,17 +3878,17 @@ async function backupData(){
 }
 
 async function importData(input){
-  const file=input.files[0];
-  if(!file) return;
-  const reader=new FileReader();
-  reader.onload=async (e)=>{
-    try{
-      const data=JSON.parse(e.target.result);
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
       
       // Validate backup structure
-      if(data.version && data.unpaidBills && data.vendorCustomers && data.deletedCustomers !== undefined) {
+      if (data.version && data.unpaidBills && data.vendorCustomers && data.deletedCustomers !== undefined) {
         const confirmed = await customConfirm('This will replace all current data. Continue?');
-        if(!confirmed) return;
+        if (!confirmed) return;
         
         // Validate imported data
         const validatedUnpaid = Array.isArray(data.unpaidBills) ? data.unpaidBills : [];
