@@ -8,7 +8,7 @@
 <!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Supabase script removed - using localStorage for reliable offline functionality -->
 <style>
 :root{
   --bg:#f8fafc;--surface:#ffffff;--card:#f1f5f9;--card2:#e2e8f0;
@@ -903,249 +903,156 @@ window.bodyTest = function() {
 
 <!-- ══════════════ SCRIPT ══════════════ -->
 <script>
-// ââ Supabase Configuration ââ
-// Replace localStorage with Supabase for cloud database storage
+// ââ DATA PERSISTENCE CONFIGURATION ââ
+// Using localStorage as primary storage for reliable offline functionality
 
-// ââ SUPABASE CONFIGURATION ââ
-// Replace the placeholder values below with your actual Supabase project credentials
-// Get these from your Supabase project dashboard -> Settings -> API
-const SUPABASE_URL = 'https://jnqnssbofwaioudalovk.supabase.co'; // Your Supabase project URL
-const SUPABASE_ANON_KEY = 'sb_publishable_ndFcMjtJFL37fVmi3ZPSEA_U_oBUmSb'; // Your Supabase anonymous key
-
-// Initialize Supabase client
-function initializeSupabase() {
-  if (typeof window.supabase !== 'undefined') {
-    try {
-      window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      console.log('Supabase client initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize Supabase client:', error);
-      // Fallback to localStorage if Supabase fails
-      console.log('Falling back to localStorage mode');
-    }
+// Initialize localStorage as primary storage
+function initializeStorage() {
+  try {
+    // Test localStorage availability
+    const testKey = 'test_storage_' + Date.now();
+    localStorage.setItem(testKey, 'test');
+    localStorage.removeItem(testKey);
+    console.log('localStorage initialized successfully - using as primary storage');
+    return true;
+  } catch (error) {
+    console.error('localStorage not available:', error);
+    return false;
   }
 }
 
-// Initialize Supabase when page loads
+// Initialize storage when page loads
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeSupabase);
+  document.addEventListener('DOMContentLoaded', initializeStorage);
 } else {
-  initializeSupabase();
+  initializeStorage();
 }
 
 // ââ Data Storage Architecture ââ
-// All application data is stored in Supabase:
-// - unpaid_bills: Unpaid customer data
-// - vendor_customers: Vendor customer data  
-// - deleted_customers: Soft-deleted customer data
-// - app_users: User authentication data
+// All application data is stored in localStorage for reliable offline functionality:
+// - unpaidBills: Unpaid customer data
+// - vendorCustomers: Vendor customer data  
+// - deletedCustomers: Soft-deleted customer data
+// - appUsers: User authentication data
 
-// ââ Supabase CRUD Functions ââ
+// ââ LocalStorage CRUD Functions ââ
 
-// Load customers from Supabase
+// Load customers from localStorage
 async function loadCustomersFromStorage(source) {
-  try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, falling back to localStorage');
-      return loadCustomersFromLocalStorage(source);
-    }
-    
-    const tableName = source === 'unpaid' ? 'unpaid_bills' : 'vendor_customers';
-    const { data: customers, error } = await window.supabaseClient
-      .from(tableName)
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error loading customers from Supabase:', error);
-      // Fallback to localStorage
-      return loadCustomersFromLocalStorage(source);
-    }
-    
-    console.log(`Loaded ${customers.length} customers from Supabase (${source})`);
-    return customers || [];
-  } catch (error) {
-    console.error('Error loading customers from Supabase:', error);
-    // Fallback to localStorage
-    return loadCustomersFromLocalStorage(source);
-  }
-}
-
-// Fallback localStorage function
-async function loadCustomersFromLocalStorage(source) {
   try {
     const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
     const data = localStorage.getItem(key);
-    const customers = data ? JSON.parse(data) : [];
     
-    console.log(`Loaded ${customers.length} customers from localStorage fallback (${source})`);
+    if (!data) {
+      console.log(`No data found for ${source}, returning empty array`);
+      return [];
+    }
+    
+    const customers = JSON.parse(data);
+    
+    // Validate that it's an array
+    if (!Array.isArray(customers)) {
+      console.error(`Data for ${source} is not an array, resetting to empty array`);
+      localStorage.setItem(key, JSON.stringify([]));
+      return [];
+    }
+    
+    console.log(`Loaded ${customers.length} customers from localStorage (${source})`);
     return customers;
   } catch (error) {
-    console.error('Error loading customers from localStorage:', error);
+    console.error(`Error loading customers from localStorage (${source}):`, error);
+    // Reset to empty array on error
+    const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    localStorage.setItem(key, JSON.stringify([]));
     return [];
   }
 }
 
-// Save customer to Supabase
+// Save customer to localStorage
 async function saveCustomerToStorage(customer, source) {
-  try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, falling back to localStorage');
-      return saveCustomerToLocalStorage(customer, source);
-    }
-    
-    const tableName = source === 'unpaid' ? 'unpaid_bills' : 'vendor_customers';
-    
-    // Add timestamp if not present
-    if (!customer.created_at) {
-      customer.created_at = new Date().toISOString();
-    }
-    customer.updated_at = new Date().toISOString();
-    
-    const { data, error } = await supabaseClient
-      .from(tableName)
-      .upsert(customer)
-      .select()
-      .single();
-    
-    if (error) {
-      console.error('Error saving customer to Supabase:', error);
-      // Fallback to localStorage
-      return saveCustomerToLocalStorage(customer, source);
-    }
-    
-    console.log(`Customer saved to Supabase (${source})`);
-    return data;
-  } catch (error) {
-    console.error('Error saving customer to Supabase:', error);
-    // Fallback to localStorage
-    return saveCustomerToLocalStorage(customer, source);
-  }
-}
-
-// Fallback localStorage function
-async function saveCustomerToLocalStorage(customer, source) {
   try {
     const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
     const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+    
+    // Add timestamp if not present
+    if (!customer.createdAt) {
+      customer.createdAt = Date.now();
+    }
+    customer.updatedAt = Date.now();
     
     // Update or add customer
     const index = list.findIndex(c => c.id === customer.id);
     if (index !== -1) {
       list[index] = customer;
+      console.log(`Updated existing customer ${customer.name} in ${source}`);
     } else {
       list.push(customer);
+      console.log(`Added new customer ${customer.name} to ${source}`);
     }
     
     // Save to localStorage
-    saveToStorage(key, list);
-    console.log(`Customer saved to localStorage fallback (${source})`);
-    return customer;
+    const saved = saveToStorage(key, list);
+    if (saved) {
+      console.log(`Customer saved to localStorage successfully (${source})`);
+      return customer;
+    } else {
+      throw new Error('Failed to save customer to localStorage');
+    }
   } catch (error) {
     console.error('Error saving customer to localStorage:', error);
     throw error;
   }
 }
 
-// Save payments to Supabase
-async function savePaymentsToStorage(customerId, payments) {
-  try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, payments saved as part of customer object');
-      return payments;
-    }
-    
-    // In Supabase, payments are stored as part of the customer record
-    // This function is kept for compatibility but the actual saving happens in saveCustomerToStorage
-    console.log(`Payments will be saved with customer record in Supabase for customer ${customerId}`);
-    return payments;
-  } catch (error) {
-    console.error('Error saving payments to Supabase:', error);
-    throw error;
-  }
-}
-
-// Save credits to Supabase
-async function saveCreditsToStorage(customerId, credits) {
-  try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, credits saved as part of customer object');
-      return credits;
-    }
-    
-    // In Supabase, credits are stored as part of the customer record
-    // This function is kept for compatibility but the actual saving happens in saveCustomerToStorage
-    console.log(`Credits will be saved with customer record in Supabase for customer ${customerId}`);
-    return credits;
-  } catch (error) {
-    console.error('Error saving credits to Supabase:', error);
-    throw error;
-  }
-}
-
-// Load deleted customers from Supabase
+// Load deleted customers from localStorage
 async function loadDeletedCustomersFromStorage() {
   try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, falling back to localStorage');
-      return loadDeletedCustomersFromLocalStorage();
-    }
-    
-    const { data: customers, error } = await window.supabaseClient
-      .from('deleted_customers')
-      .select('*')
-      .order('deleted_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error loading deleted customers from Supabase:', error);
-      // Fallback to localStorage
-      return loadDeletedCustomersFromLocalStorage();
-    }
-    
-    console.log(`Loaded ${customers.length} deleted customers from Supabase`);
-    return customers || [];
-  } catch (error) {
-    console.error('Error loading deleted customers from Supabase:', error);
-    // Fallback to localStorage
-    return loadDeletedCustomersFromLocalStorage();
-  }
-}
-
-// Fallback localStorage function
-async function loadDeletedCustomersFromLocalStorage() {
-  try {
     const data = localStorage.getItem(STORAGE_KEYS.deleted);
-    const customers = data ? JSON.parse(data) : [];
     
-    console.log(`Loaded ${customers.length} deleted customers from localStorage fallback`);
+    if (!data) {
+      console.log('No deleted customers data found, returning empty array');
+      return [];
+    }
+    
+    const customers = JSON.parse(data);
+    
+    // Validate that it's an array
+    if (!Array.isArray(customers)) {
+      console.error('Deleted customers data is not an array, resetting to empty array');
+      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify([]));
+      return [];
+    }
+    
+    console.log(`Loaded ${customers.length} deleted customers from localStorage`);
     return customers;
   } catch (error) {
     console.error('Error loading deleted customers from localStorage:', error);
+    // Reset to empty array on error
+    localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify([]));
     return [];
   }
 }
 
-// ââ Test Supabase Integration ââ
-async function testSupabaseIntegration() {
-  console.log('Testing Supabase integration...');
+// ââ Data Integrity Check ââ
+async function verifyStorageIntegrity() {
+  console.log('Verifying storage integrity...');
   
   try {
-    if (!window.supabaseClient) {
-      console.log('Supabase not available, skipping integration test');
+    // Test that we can read and write to localStorage
+    const testData = { test: true, timestamp: Date.now() };
+    localStorage.setItem('integrity_test', JSON.stringify(testData));
+    const retrieved = JSON.parse(localStorage.getItem('integrity_test'));
+    localStorage.removeItem('integrity_test');
+    
+    if (!retrieved || retrieved.test !== true) {
+      console.error('Storage integrity test failed - localStorage not working properly');
       return false;
     }
     
-    // Test connection
-    const { data, error } = await window.supabaseClient.from('unpaid_bills').select('count').single();
-    if (error && !error.message.includes('does not exist')) {
-      console.error('Supabase connection test failed:', error);
-      return false;
-    }
-    
-    console.log('Supabase integration test passed!');
+    console.log('Storage integrity test passed');
     return true;
   } catch (error) {
-    console.error('Supabase integration test failed:', error);
+    console.error('Storage integrity test failed:', error);
     return false;
   }
 }
@@ -1601,25 +1508,39 @@ function validateDataIntegrity() {
 // ── DATA LOADING ──
 async function loadAll() {
   try {
-// Load from localStorage using the new functions
-    console.log('Loading from localStorage...');
+    console.log('Loading data from localStorage...');
+    
+    // Verify storage integrity first
+    const integrityPassed = await verifyStorageIntegrity();
+    if (!integrityPassed) {
+      console.error('Storage integrity check failed, data may be lost');
+      notify('Storage integrity check failed. Some data may be lost.', 'warning');
+    }
+    
+    // Load data from localStorage
     unpaidBills = await loadCustomersFromStorage('unpaid');
     vendorCustomers = await loadCustomersFromStorage('vendor');
     deletedCustomers = await loadDeletedCustomersFromStorage();
     
-    // Load payments and credits for each customer
-    await loadPaymentsAndCredits();
+    // Ensure all customers have required arrays
+    const allCustomers = [...unpaidBills, ...vendorCustomers];
+    allCustomers.forEach(customer => {
+      if (!customer.payments) customer.payments = [];
+      if (!customer.credits) customer.credits = [];
+      if (!customer.id) customer.id = generateUniqueId();
+    });
     
-    console.log('Data loaded from localStorage successfully');
+    console.log(`Data loaded successfully: ${unpaidBills.length} unpaid, ${vendorCustomers.length} vendor, ${deletedCustomers.length} deleted`);
+    return true;
   } catch (error) {
     console.error('Error loading data from localStorage:', error);
     // Initialize empty arrays if loading fails
     unpaidBills = [];
     vendorCustomers = [];
     deletedCustomers = [];
+    notify('Failed to load data. Starting with empty data.', 'error');
+    return false;
   }
-  
-  renderAll();
 }
 
 // Load payments and credits for all customers (temporarily disabled)
@@ -1855,11 +1776,21 @@ async function createAccount() {
 
 // ── INIT ──
 async function init() {
-// Initialize Socket.IO connection first
-  initializeSocket();
+  console.log('Initializing application...');
+  
+  // Initialize storage first
+  const storageReady = initializeStorage();
+  if (!storageReady) {
+    console.error('Failed to initialize storage');
+    notify('Storage initialization failed. Please check your browser settings.', 'error');
+    return;
+  }
   
   // Load data from localStorage
-  await loadAll();
+  const dataLoaded = await loadAll();
+  if (!dataLoaded) {
+    console.warn('Data loading had issues, but continuing with empty data');
+  }
   
   // Fix any existing duplicate IDs
   const fixedCount = fixDuplicateIds();
@@ -1873,10 +1804,11 @@ async function init() {
     console.warn('⚠️ Application starting with data integrity issues');
   }
   
+  // Update UI
   renderAll();
   document.getElementById('headerDate').textContent = new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
   
-  // Connection status is now handled silently - no notifications needed
+  console.log('Application initialization complete');
 }
 
 // ── HELPERS ──
@@ -2167,13 +2099,14 @@ async function saveCustomer(){
       if(index !== -1) {
         const updatedCustomer = { ...list[index], name, number, amount };
         
-        // Update local array first
-        list[index] = updatedCustomer;
-        
-        // Save to localStorage
-        saveToStorage(currentList === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor, list);
-        renderAll();
-        notify('Customer updated!');
+        // Save using new storage system
+        const savedCustomer = await saveCustomerToStorage(updatedCustomer, currentList);
+        if (savedCustomer) {
+          renderAll();
+          notify('Customer updated successfully!');
+        }
+      } else {
+        notify('Customer not found for update', 'error');
       }
     } else {
       // Create new customer
@@ -2195,17 +2128,17 @@ async function saveCustomer(){
         createdAt: ts()
       };
       
-      // Add new customer at the beginning of the array (upper area on the line)
-      unpaidBills.unshift(newCust);
-      
-      // Save to localStorage
-      saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
-      renderAll();
-      notify('Customer added!');
+      // Save using new storage system
+      const savedCustomer = await saveCustomerToStorage(newCust, 'unpaid');
+      if (savedCustomer) {
+        renderAll();
+        notify('Customer added successfully!');
+      }
     }
     
     closeAddModal();
   } catch (error) {
+    console.error('Save customer error:', error);
     notify('Failed to save customer: ' + error.message, 'error');
   }
 }
@@ -2221,17 +2154,30 @@ async function deleteCurrentCustomer(){
     if(index !== -1) {
       const customer = list[index];
       customer.source = currentList;
+      customer.deletedAt = Date.now();
+      
+      // Add to deleted customers
       deletedCustomers.push(customer);
+      
+      // Remove from original list
       list.splice(index, 1);
       
-      saveToStorage(STORAGE_KEYS[currentList], list);
-      saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
-      renderAll();
+      // Save both lists
+      const sourceSaved = saveToStorage(STORAGE_KEYS[currentList], list);
+      const deletedSaved = saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      
+      if (sourceSaved && deletedSaved) {
+        renderAll();
+        closeAddModal();
+        notify('Customer moved to recycle bin','warning');
+      } else {
+        throw new Error('Failed to save data to storage');
+      }
+    } else {
+      notify('Customer not found', 'error');
     }
-    
-    closeAddModal();
-    notify('Customer moved to recycle bin','warning');
   } catch (error) {
+    console.error('Delete customer error:', error);
     notify('Failed to delete customer: ' + error.message, 'error');
   }
 }
@@ -2257,18 +2203,27 @@ async function quickDelete(id, which){
       console.log('Customer to delete:', customer.name);
       
       customer.source = which;
+      customer.deletedAt = Date.now();
+      
+      // Add to deleted customers
       deletedCustomers.push(customer);
+      
+      // Remove from original list
       list.splice(index, 1);
       
       console.log('Customer moved to recycle bin');
       
-      localStorage.setItem(STORAGE_KEYS[which], JSON.stringify(list));
-      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
-      syncToServer();
-      renderAll();
+      // Save both lists using new storage system
+      const sourceSaved = saveToStorage(STORAGE_KEYS[which], list);
+      const deletedSaved = saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
       
-      console.log('Delete completed successfully');
-      notify('Moved to recycle bin','warning');
+      if (sourceSaved && deletedSaved) {
+        renderAll();
+        console.log('Delete completed successfully');
+        notify('Moved to recycle bin','warning');
+      } else {
+        throw new Error('Failed to save data to storage');
+      }
     } else {
       console.error('Customer not found in list');
       notify('Customer not found', 'error');
@@ -2532,16 +2487,16 @@ async function recordPayment(){
     updatedCust.payments.push(paymentEntry);
     list[index] = updatedCust;
     
-    // Save with verification
-    const saved = saveToStorage(STORAGE_KEYS[currentList], list);
-    if(!saved) {
+    // Save using new storage system
+    const savedCustomer = await saveCustomerToStorage(updatedCust, currentList);
+    if (!savedCustomer) {
       throw new Error('Failed to save payment data');
     }
     
     // Update UI only after successful save
     renderAll();
     
-    // Update the remaining balance display without calling updatePaymentPreview
+    // Update remaining balance display without calling updatePaymentPreview
     const rem = remaining(updatedCust);
     document.getElementById('payCustRem').textContent = fmt(rem);
     document.getElementById('remAfterPay').textContent = fmt(rem);
@@ -2570,18 +2525,30 @@ async function deletePayCustomer(){
     if(index !== -1) {
       const customer = list[index];
       customer.source = currentList;
+      customer.deletedAt = Date.now();
+      
+      // Add to deleted customers
       deletedCustomers.push(customer);
+      
+      // Remove from original list
       list.splice(index, 1);
       
-      localStorage.setItem(STORAGE_KEYS[currentList], JSON.stringify(list));
-      localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(deletedCustomers));
-      syncToServer();
-      renderAll();
+      // Save both lists using new storage system
+      const sourceSaved = saveToStorage(STORAGE_KEYS[currentList], list);
+      const deletedSaved = saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      
+      if (sourceSaved && deletedSaved) {
+        renderAll();
+        closePayModal();
+        notify('Moved to recycle bin','warning');
+      } else {
+        throw new Error('Failed to save data to storage');
+      }
+    } else {
+      notify('Customer not found', 'error');
     }
-    
-    closePayModal();
-    notify('Moved to recycle bin','warning');
   } catch (error) {
+    console.error('Delete customer error:', error);
     notify('Failed to delete customer: ' + error.message, 'error');
   }
 }
@@ -2604,15 +2571,23 @@ async function toggleLocation(){
       // Add to destination list
       destList.push(customer);
       
-      saveToStorage(STORAGE_KEYS[currentList], sourceList);
-      saveToStorage(STORAGE_KEYS[dest], destList);
+      // Save both lists using new storage system
+      const sourceSaved = saveToStorage(STORAGE_KEYS[currentList], sourceList);
+      const destSaved = saveToStorage(STORAGE_KEYS[dest], destList);
       
-      currentList = dest;
-      renderAll();
-      refreshPayModal(customer);
-      notify(`Moved to ${dest==='vendor'?'Vendor Details':'Unpaid Bills'}`);
+      if (sourceSaved && destSaved) {
+        currentList = dest;
+        renderAll();
+        refreshPayModal(customer);
+        notify(`Moved to ${dest==='vendor'?'Vendor Details':'Unpaid Bills'}`);
+      } else {
+        throw new Error('Failed to save data to storage');
+      }
+    } else {
+      notify('Customer not found', 'error');
     }
   } catch (error) {
+    console.error('Toggle location error:', error);
     notify('Failed to move customer: ' + error.message, 'error');
   }
 }
@@ -3338,9 +3313,9 @@ async function saveCredit(){
     
     list[index] = updatedCust;
     
-    // Save with verification
-    const saved = saveToStorage(STORAGE_KEYS[currentList], list);
-    if(!saved) {
+    // Save using new storage system
+    const savedCustomer = await saveCustomerToStorage(updatedCust, currentList);
+    if (!savedCustomer) {
       throw new Error('Failed to save credit data');
     }
     
@@ -3514,16 +3489,28 @@ async function restoreCustomer(id){
     if(index !== -1) {
       const customer = deletedCustomers.splice(index, 1)[0];
       const destList = customer.source === 'vendor' ? vendorCustomers : unpaidBills;
+      
+      // Remove deletedAt timestamp when restoring
+      delete customer.deletedAt;
+      
       destList.push(customer);
       
-      saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
-      saveToStorage(STORAGE_KEYS[customer.source], destList);
+      // Save both lists using new storage system
+      const deletedSaved = saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      const destSaved = saveToStorage(STORAGE_KEYS[customer.source], destList);
       
-      renderAll();
-      openBinModal();
-      notify('Customer restored successfully!');
+      if (deletedSaved && destSaved) {
+        renderAll();
+        openBinModal();
+        notify('Customer restored successfully!');
+      } else {
+        throw new Error('Failed to save data to storage');
+      }
+    } else {
+      notify('Customer not found in recycle bin', 'error');
     }
   } catch (error) {
+    console.error('Restore customer error:', error);
     notify('Failed to restore customer: ' + error.message, 'error');
   }
 }
@@ -3536,12 +3523,19 @@ async function permanentDeleteCustomer(id, customerName) {
     const index = deletedCustomers.findIndex(c => c.id === id);
     if (index !== -1) {
       deletedCustomers.splice(index, 1);
-      saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
       
-      openBinModal();
-      notify(`"${customerName}" permanently deleted`, 'success');
+      const saved = saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      if (saved) {
+        openBinModal();
+        notify(`"${customerName}" permanently deleted`, 'success');
+      } else {
+        throw new Error('Failed to save data to storage');
+      }
+    } else {
+      notify('Customer not found in recycle bin', 'error');
     }
   } catch (error) {
+    console.error('Permanent delete error:', error);
     notify('Failed to delete customer: ' + error.message, 'error');
   }
 }
@@ -3581,20 +3575,38 @@ async function importData(input){
         const confirmed = await customConfirm('This will replace all current data. Continue?');
         if(!confirmed) return;
         
-        unpaidBills = data.unpaidBills || [];
-        vendorCustomers = data.vendorCustomers || [];
-        deletedCustomers = data.deletedCustomers || [];
+        // Validate imported data
+        const validatedUnpaid = Array.isArray(data.unpaidBills) ? data.unpaidBills : [];
+        const validatedVendor = Array.isArray(data.vendorCustomers) ? data.vendorCustomers : [];
+        const validatedDeleted = Array.isArray(data.deletedCustomers) ? data.deletedCustomers : [];
         
-        saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
-        saveToStorage(STORAGE_KEYS.vendor, vendorCustomers);
-        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+        // Ensure all customers have required fields
+        [...validatedUnpaid, ...validatedVendor].forEach(customer => {
+          if (!customer.id) customer.id = generateUniqueId();
+          if (!customer.payments) customer.payments = [];
+          if (!customer.credits) customer.credits = [];
+        });
         
-        renderAll();
-        notify('Data imported successfully!');
+        unpaidBills = validatedUnpaid;
+        vendorCustomers = validatedVendor;
+        deletedCustomers = validatedDeleted;
+        
+        // Save using new storage system
+        const unpaidSaved = saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+        const vendorSaved = saveToStorage(STORAGE_KEYS.vendor, vendorCustomers);
+        const deletedSaved = saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+        
+        if (unpaidSaved && vendorSaved && deletedSaved) {
+          renderAll();
+          notify('Data imported successfully!');
+        } else {
+          throw new Error('Failed to save imported data to storage');
+        }
       } else {
         notify('Invalid backup file format', 'error');
       }
     } catch(err){ 
+      console.error('Import error:', err);
       notify('Invalid backup file','error'); 
     }
   };
@@ -4067,7 +4079,7 @@ async function resetAllData() {
 }
 </script>
 
-<!-- Simple test to verify JavaScript execution -->
+<!-- Simple test to verify JavaScript execution and data persistence -->
 <script>
 try {
   console.log('JavaScript execution test - page loaded successfully');
@@ -4076,6 +4088,34 @@ try {
     return true;
   };
   console.log('simpleTest function created successfully');
+  
+  // Test data persistence
+  window.testDataPersistence = function() {
+    console.log('Testing data persistence...');
+    try {
+      const testData = { test: 'persistence', timestamp: Date.now() };
+      localStorage.setItem('persistence_test', JSON.stringify(testData));
+      const retrieved = JSON.parse(localStorage.getItem('persistence_test'));
+      localStorage.removeItem('persistence_test');
+      
+      if (retrieved && retrieved.test === 'persistence') {
+        console.log('✅ Data persistence test PASSED');
+        return true;
+      } else {
+        console.error('❌ Data persistence test FAILED');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Data persistence test ERROR:', error);
+      return false;
+    }
+  };
+  
+  // Run persistence test on page load
+  setTimeout(() => {
+    window.testDataPersistence();
+  }, 1000);
+  
 } catch(e) {
   console.error('Error in test script:', e);
 }
