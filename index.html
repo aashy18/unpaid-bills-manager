@@ -8,39 +8,53 @@
 <!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<!-- Supabase client library -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 <script>
-  // Supabase configuration (replace with your actual project URL and anon key)
-  // Refer to SUPABASE_SETUP.md for instructions on how to get these credentials.
-  const SUPABASE_URL = 'https://jnqnssbofwaioudalovk.supabase.co'; // Replace with your Project URL
-  const SUPABASE_ANON_KEY = 'sb_publishable_ndFcMjtJFL37fVmi3ZPSEA_U_oBUmSb'; // Replace with your anon public key
+  // Firebase configuration (replace with your actual project config)
+  // Refer to FIREBASE_SETUP.md for instructions on how to get these credentials.
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
 
-  let supabaseClient = null;
+  let firebaseApp = null;
+  let firebaseAuth = null;
+  let firebaseDatabase = null;
   // Declare as a property of window to ensure it's globally accessible across script tags
   window.isServerMode = false;
 
   try {
-    const isSupabaseKeyValid = SUPABASE_ANON_KEY && (SUPABASE_ANON_KEY.startsWith('eyJ') || SUPABASE_ANON_KEY.startsWith('sb_'));
-
-    // Check if Supabase library is loaded
-    if (typeof window.supabase === 'undefined') {
-      console.warn('Supabase library not loaded. Running in localStorage-only mode.');
+    // Check if Firebase libraries are loaded
+    if (typeof firebase === 'undefined') {
+      console.warn('Firebase libraries not loaded. Running in localStorage-only mode.');
       window.isServerMode = false;
-    } else if (SUPABASE_URL && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co' && isSupabaseKeyValid) {
-      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      window.supabase = supabaseClient; // Make it globally accessible
-      console.log('Supabase client initialized successfully!');
+    } else if (firebaseConfig.apiKey && firebaseConfig.apiKey !== 'YOUR_API_KEY') {
+      firebaseApp = firebase.initializeApp(firebaseConfig);
+      firebaseAuth = firebase.auth();
+      firebaseDatabase = firebase.database();
+      
+      // Make Firebase globally accessible
+      window.firebaseApp = firebaseApp;
+      window.firebaseAuth = firebaseAuth;
+      window.firebaseDatabase = firebaseDatabase;
+      
+      console.log('Firebase initialized successfully!');
       window.isServerMode = true;
     } else {
-      if (!isSupabaseKeyValid) {
-        console.error('Supabase ANON_KEY appears invalid. It should start with "eyJ" or "sb_". Please check SUPABASE_SETUP.md.');
-      }
-      console.warn('Supabase credentials not fully configured or invalid. Running in localStorage-only mode.');
+      console.error('Firebase configuration not complete. Please check FIREBASE_SETUP.md.');
+      console.warn('Firebase credentials not fully configured. Running in localStorage-only mode.');
       window.isServerMode = false;
     }
   } catch (error) {
-    console.error('Error initializing Supabase client:', error);
+    console.error('Error initializing Firebase:', error);
     window.isServerMode = false;
   }
 </script>
@@ -1084,10 +1098,10 @@ function saveToStorage(key, data) {
     console.log('Successfully saved data for key:', key, 'Size:', jsonString.length, 'bytes');
     
     // Sync to server if in server mode
-    if (isServerMode && window.supabase) {
-      console.log(`Immediately syncing data for key: ${key} to Supabase`);
-      syncToSupabase(key, data).catch(err => {
-        console.error('Immediate Supabase sync failed:', err);
+    if (isServerMode && window.firebaseDatabase) {
+      console.log(`Immediately syncing data for key: ${key} to Firebase`);
+      syncToFirebase(key, data).catch(err => {
+        console.error('Immediate Firebase sync failed:', err);
         notify(`Failed to sync to cloud: ${err.message}`, 'warning');
       });
     }
@@ -1146,34 +1160,34 @@ function initializeSocket() {
 
 // Send data to server for sync
 async function syncToServer() {
-  if (!window.isServerMode || !window.supabase) {
+  if (!window.isServerMode || !window.firebaseDatabase) {
     console.log('📤 Server sync not available - running in localStorage mode');
     return;
   }
   
   try {
-    console.log('📤 Syncing all data to server...');
+    console.log('📤 Syncing all data to Firebase...');
     
     // Sync all data types
     const syncPromises = [];
     
     if (unpaidBills.length > 0) {
-      syncPromises.push(syncToSupabase(STORAGE_KEYS.unpaid, unpaidBills));
+      syncPromises.push(syncToFirebase(STORAGE_KEYS.unpaid, unpaidBills));
     }
     
     if (vendorCustomers.length > 0) {
-      syncPromises.push(syncToSupabase(STORAGE_KEYS.vendor, vendorCustomers));
+      syncPromises.push(syncToFirebase(STORAGE_KEYS.vendor, vendorCustomers));
     }
     
     if (deletedCustomers.length > 0) {
-      syncPromises.push(syncToSupabase(STORAGE_KEYS.deleted, deletedCustomers));
+      syncPromises.push(syncToFirebase(STORAGE_KEYS.deleted, deletedCustomers));
     }
     
     await Promise.all(syncPromises);
-    console.log('✅ All data synced to server successfully');
+    console.log('✅ All data synced to Firebase successfully');
     
   } catch (error) {
-    console.error('❌ Failed to sync data to server:', error);
+    console.error('❌ Failed to sync data to Firebase:', error);
     notify('Failed to sync data to cloud', 'error');
   }
 }
@@ -1187,95 +1201,65 @@ const DEFAULT_ADMIN = {
   id: 'admin_default',
   fullName: 'Administrator',
   username: 'admin',
-  password: 'admin',
-  role: 'admin',
-  createdAt: Date.now()
 };
 
-// Supabase Auth functions
+// Firebase Auth functions
 async function signUpUser(email, password, fullName) {
   try {
-    if (!window.supabase) {
-      console.log('Supabase not available, using localStorage signup');
-      return null; // Supabase not available, let createAccount handle localStorage
+    if (!window.firebaseAuth) {
+      console.log('Firebase not available, using localStorage signup');
+      return null; // Firebase not available, let createAccount handle localStorage
     }
     
-    const { data, error } = await window.supabase.auth.signUp({
-      email: email,
-      password: password,
-      options: {
-        data: {
-          full_name: fullName
-        }
-      }
+    const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(email, password);
+    const user = userCredential.user;
+    
+    // Update user profile with display name
+    await user.updateProfile({
+      displayName: fullName
     });
     
-    if (error) {
-      console.error('Supabase signup error:', error);
-      return null; // Supabase signup failed, let createAccount handle localStorage
-    }
-    
-    console.log('User signed up successfully with Supabase');
-    // Supabase user object is returned, createAccount will use this
-    return data;
+    console.log('User signed up successfully with Firebase');
+    return { user: user };
   } catch (error) {
-    console.error('Error signing up user:', error);
-    // Fallback to localStorage
-    return signUpUserLocalStorage(email, password, fullName);
+    console.error('Firebase signup error:', error);
+    return null; // Firebase signup failed, let createAccount handle localStorage
   }
 }
 
 async function signInUser(email, password) {
   try {
-    if (!window.supabase) {
-      console.log('Supabase not available, attempting localStorage signin');
+    if (!window.firebaseAuth) {
+      console.log('Firebase not available, attempting localStorage signin');
       return signInUserLocalStorage(email, password);
     }
     
-    const { data, error } = await window.supabase.auth.signInWithPassword({
-      email: email,
-      password: password
-    });
+    const userCredential = await window.firebaseAuth.signInWithEmailAndPassword(email, password);
+    const user = userCredential.user;
     
-    if (error) {
-      console.error('Supabase signin error:', error);
-      return null; // Supabase signin failed, let doLogin handle localStorage
-    }
-    
-    console.log('User signed in successfully with Supabase');
-    return data;
+    console.log('User signed in successfully with Firebase');
+    return { user: user };
   } catch (error) {
-    console.error('Error signing in user:', error);
-    // Fallback to localStorage
-    return signInUserLocalStorage(email, password);
+    console.error('Firebase signin error:', error);
+    return null; // Firebase signin failed, let doLogin handle localStorage
   }
 }
 
 async function signOutUser() {
   try {
-    if (!window.supabase) {
-      console.log('Supabase not available, clearing localStorage session');
+    if (!window.firebaseAuth) {
+      console.log('Firebase not available, clearing localStorage session');
       return signOutUserLocalStorage();
     }
     
-    const { error } = await window.supabase.auth.signOut();
+    await window.firebaseAuth.signOut();
     
-    if (error) {
-      console.error('Supabase signout error:', error);
-    }
-    
-    console.log('User signed out successfully from Supabase');
+    console.log('User signed out successfully from Firebase');
     return true;
   } catch (error) {
     console.error('Error signing out user:', error);
-    return signOutUserLocalStorage();
+    return false;
   }
-}
-
-async function signInUserLocalStorage(email, password) {
-  console.log('Using localStorage signin fallback');
-  // Implementation for localStorage signin
-  return { user: { email } };
 }
 
 async function signOutUserLocalStorage() {
@@ -1298,11 +1282,11 @@ const STORAGE_KEYS = {
   deleted: 'deletedCustomers'
 };
 
-// Map localStorage keys to Supabase table names
-const SUPABASE_TABLE_MAP = {
-  [STORAGE_KEYS.unpaid]: 'unpaid_bills',
-  [STORAGE_KEYS.vendor]: 'vendor_customers',
-  [STORAGE_KEYS.deleted]: 'deleted_customers'
+// Map localStorage keys to Firebase Realtime Database paths
+const FIREBASE_PATHS = {
+  [STORAGE_KEYS.unpaid]: 'unpaidBills',
+  [STORAGE_KEYS.vendor]: 'vendorCustomers',
+  [STORAGE_KEYS.deleted]: 'deletedCustomers'
 };
 
 function loadUsers() {
@@ -1484,147 +1468,141 @@ function validateDataIntegrity() {
   }
 }
 
-// Supabase data synchronization functions
-async function syncToSupabase(localStorageKey, data) {
-  if (!window.supabase) {
-    console.warn('Supabase client not available for sync.');
+// Firebase Realtime Database synchronization functions
+async function syncToFirebase(localStorageKey, data) {
+  if (!window.firebaseDatabase) {
+    console.warn('Firebase Database not available for sync.');
     return;
   }
 
-  const tableName = SUPABASE_TABLE_MAP[localStorageKey];
-  if (!tableName) {
-    console.error(`No Supabase table mapping found for localStorage key: ${localStorageKey}`);
+  const firebasePath = FIREBASE_PATHS[localStorageKey];
+  if (!firebasePath) {
+    console.error(`No Firebase path mapping found for localStorage key: ${localStorageKey}`);
     return;
   }
 
   const maxRetries = 3;
   let retryCount = 0;
 
+  const isRetryableError = (error) => {
+    // Network errors, timeouts, and certain server errors are retryable
+    return error.code === 'NETWORK_ERROR' || 
+           error.code === 'TIMEOUT' || 
+           error.code === 'UNAVAILABLE' ||
+           error.message?.includes('timeout') ||
+           error.message?.includes('network');
+  };
+
   const attemptSync = async () => {
     try {
-      console.log(`Syncing ${localStorageKey} to Supabase table ${tableName}... (Attempt ${retryCount + 1}/${maxRetries})`);
+      console.log(`Syncing ${localStorageKey} to Firebase path ${firebasePath}... (Attempt ${retryCount + 1}/${maxRetries})`);
       
-      // Transform data to match SQL schema (snake_case columns and specific field names)
-      const formattedData = data.map(item => {
-        const mapped = {
+      // Transform data to match Firebase format (keep camelCase)
+      const formattedData = {};
+      data.forEach(item => {
+        const transformed = {
           id: item.id,
-          name: item.name,
-          number: item.number,
-          balance: parseFloat(item.balance || 0),
+          name: item.name || '',
+          number: item.number || '',
+          balance: parseFloat(item.balance) || 0,
           payments: item.payments || [],
-          credits: item.credits || []
+          credits: item.credits || [],
+          createdAt: item.createdAt || Date.now(),
+          updatedAt: item.updatedAt || Date.now()
         };
 
-        // Map camelCase JS dates to snake_case SQL columns as ISO strings
-        if (item.createdAt) mapped.created_at = new Date(item.createdAt).toISOString();
-        if (item.updatedAt) mapped.updated_at = new Date(item.updatedAt).toISOString();
-        
-        if (tableName === 'deleted_customers') {
-          if (item.deletedAt) mapped.deleted_at = new Date(item.deletedAt).toISOString();
-          mapped.original_table = item.source || item.original_table || '';
+        // Add deletedAt for deleted_customers
+        if (firebasePath === 'deletedCustomers') {
+          transformed.deletedAt = item.deletedAt || Date.now();
+          transformed.source = item.source || 'unpaid';
         }
-        return mapped;
+
+        // Use the item ID as the key in Firebase
+        formattedData[item.id] = transformed;
       });
       
-      // Use upsert for better real-time performance (update existing, insert new)
-      const { error: upsertError } = await window.supabase
-        .from(tableName)
-        .upsert(formattedData, { 
-          onConflict: 'id',  // Assuming 'id' is the primary key
-          ignoreDuplicates: false 
-        });
+      // Save to Firebase Realtime Database
+      await window.firebaseDatabase.ref(firebasePath).set(formattedData);
 
-      if (upsertError) {
-        console.error(`Error upserting data to Supabase table ${tableName}:`, upsertError);
-        
-        // Check if it's a network error that might be retryable
-        if (isRetryableError(upsertError) && retryCount < maxRetries - 1) {
-          retryCount++;
-          console.log(`Retryable error detected, retrying in 2 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          return attemptSync();
-        }
-        
-        throw upsertError;
-      }
-
-      console.log(`✅ Successfully synced ${data.length} items to Supabase table ${tableName}.`);
+      console.log(`✅ Successfully synced ${data.length} items to Firebase path ${firebasePath}.`);
       if (retryCount === 0) {
         // Only show success notification on first attempt to avoid spam
         notify(`Data synced to cloud for ${localStorageKey}`, 'success');
       }
 
     } catch (error) {
-      console.error(`Failed to sync ${localStorageKey} to Supabase:`, error);
+      console.error(`Failed to sync ${localStorageKey} to Firebase:`, error);
       
       if (retryCount < maxRetries - 1 && isRetryableError(error)) {
         retryCount++;
-        console.log(`Retryable error detected, retrying in 2 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        return attemptSync();
+        console.log(`Retrying sync for ${localStorageKey} in 2 seconds... (${retryCount}/${maxRetries})`);
+        setTimeout(attemptSync, 2000);
+      } else {
+        notify(`Failed to sync ${localStorageKey} to cloud after ${maxRetries} attempts`, 'error');
+        throw error;
       }
-      
-      // Final failure - show warning but don't block the app
-      notify(`Cloud sync failed for ${localStorageKey}. Data saved locally.`, 'warning');
     }
   };
-
-  // Helper function to determine if an error is retryable
-  function isRetryableError(error) {
-    const retryableErrors = [
-      'network',
-      'timeout',
-      'connection',
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'ENOTFOUND',
-      '502',
-      '503',
-      '504'
-    ];
-    
-    const errorMessage = error.message || error.toString();
-    return retryableErrors.some(err => errorMessage.toLowerCase().includes(err.toLowerCase()));
-  }
 
   await attemptSync();
 }
 
-async function loadFromSupabase(localStorageKey) {
-  const tableName = SUPABASE_TABLE_MAP[localStorageKey];
-  if (!tableName) return null;
+async function loadFromFirebase(localStorageKey) {
+  const firebasePath = FIREBASE_PATHS[localStorageKey];
+  if (!firebasePath) return null;
 
   try {
-    const { data, error } = await window.supabase.from(tableName).select('*');
-    if (error) throw error;
+    const snapshot = await window.firebaseDatabase.ref(firebasePath).once('value');
+    const data = snapshot.val();
     
-    // Map back to JS format (camelCase and specific field names)
-    return data.map(item => ({
-      ...item,
-      createdAt: item.created_at ? new Date(item.created_at).getTime() : item.createdAt,
-      updatedAt: item.updated_at ? new Date(item.updated_at).getTime() : item.updatedAt,
-      deletedAt: item.deleted_at ? new Date(item.deleted_at).getTime() : item.deletedAt,
-      source: item.original_table || item.source
-    }));
+    if (!data) {
+      console.log(`No data found in Firebase path ${firebasePath}`);
+      return [];
+    }
+    
+    // Transform Firebase data back to app format (convert object to array)
+    const transformedData = Object.values(data).map(item => {
+      const transformed = {
+        id: item.id,
+        name: item.name || '',
+        number: item.number || '',
+        balance: parseFloat(item.balance) || 0,
+        payments: item.payments || [],
+        credits: item.credits || [],
+        createdAt: item.createdAt || Date.now(),
+        updatedAt: item.updatedAt || Date.now()
+      };
+
+      // Handle deletedCustomers specific fields
+      if (firebasePath === 'deletedCustomers') {
+        transformed.deletedAt = item.deletedAt || Date.now();
+        transformed.source = item.source || 'unpaid';
+      }
+
+      return transformed;
+    });
+
+    console.log(`✅ Loaded ${transformedData.length} items from Firebase path ${firebasePath}`);
+    return transformedData;
   } catch (error) {
-    console.error(`Error loading from Supabase table ${tableName}:`, error);
+    console.error(`Failed to load data from Firebase path ${firebasePath}:`, error);
     return null;
   }
 }
 
 async function loadFromStorage(key) {
   try {
-    // Try loading from Supabase first if in server mode
-    if (isServerMode && window.supabase) {
-      console.log(`Attempting to load data for key: ${key} from Supabase`);
-      const supabaseData = await loadFromSupabase(key);
-      if (supabaseData && supabaseData.length > 0) {
-        console.log(`Successfully loaded ${supabaseData.length} items from Supabase for key: ${key}`);
+    // Try loading from Firebase first if in server mode
+    if (isServerMode && window.firebaseDatabase) {
+      console.log(`Attempting to load data for key: ${key} from Firebase`);
+      const firebaseData = await loadFromFirebase(key);
+      if (firebaseData && firebaseData.length > 0) {
+        console.log(`Successfully loaded ${firebaseData.length} items from Firebase for key: ${key}`);
         // Also save to localStorage for offline access
-        localStorage.setItem(key, JSON.stringify(supabaseData));
-        return supabaseData;
+        localStorage.setItem(key, JSON.stringify(firebaseData));
+        return firebaseData;
       } else {
-        console.log(`No data found in Supabase for key: ${key}, falling back to localStorage.`);
+        console.log(`No data found in Firebase for key: ${key}, falling back to localStorage.`);
       }
     }
 
@@ -1652,224 +1630,143 @@ async function verifyStorageIntegrity() {
   } catch (e) { return false; }
 }
 
-// Real-time synchronization with Supabase
-let realtimeSubscriptions = [];
+// Real-time synchronization with Firebase
+let realtimeListeners = [];
 
 async function setupRealtimeSync() {
-  if (!window.supabase) {
-    console.warn('Supabase not available for real-time sync');
+  if (!window.firebaseDatabase) {
+    console.warn('Firebase Database not available for real-time sync');
     return;
   }
 
-  console.log('Setting up real-time synchronization...');
+  console.log('Setting up Firebase real-time synchronization...');
 
-  // Clear existing subscriptions
-  realtimeSubscriptions.forEach(subscription => {
-    if (subscription) {
-      subscription.unsubscribe();
+  // Clear existing listeners
+  realtimeListeners.forEach(listener => {
+    if (listener && listener.off) {
+      listener.off();
     }
   });
-  realtimeSubscriptions = [];
+  realtimeListeners = [];
 
-  const setupSubscription = async (tableName, handler, channelName) => {
+  const setupListener = (firebasePath, handler) => {
     try {
-      const channel = window.supabase
-        .channel(channelName)
-        .on('postgres_changes', 
-          { event: '*', schema: 'public', table: tableName },
-          handler
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log(`✅ Real-time sync active for ${tableName}`);
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error(`❌ Real-time sync error for ${tableName}`);
-            notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
-          } else if (status === 'TIMED_OUT') {
-            console.warn(`⚠️ Real-time sync connection timed out for ${tableName}, Supabase will attempt to reconnect.`);
-          } else if (status === 'CLOSED') {
-            console.warn(`⚠️ Real-time sync connection closed for ${tableName}, Supabase will attempt to reconnect.`);
-          }
-        });
+      const ref = window.firebaseDatabase.ref(firebasePath);
       
-      return channel;
+      // Set up the real-time listener
+      ref.on('value', (snapshot) => {
+        const data = snapshot.val();
+        console.log(`Firebase real-time update received for ${firebasePath}:`, data);
+        handler(data);
+      }, (error) => {
+        console.error(`Firebase real-time listener error for ${firebasePath}:`, error);
+        notify(`Real-time sync failed for ${firebasePath}. Changes may not sync across devices.`, 'warning');
+      });
+      
+      return ref;
     } catch (error) {
-      console.error(`Failed to setup subscription for ${tableName}:`, error);
-      notify(`Real-time sync setup failed for ${tableName}: ${error.message}`, 'error');
+      console.error(`Failed to setup Firebase listener for ${firebasePath}:`, error);
+      notify(`Real-time sync setup failed for ${firebasePath}: ${error.message}`, 'error');
       return null;
     }
   };
 
   try {
-    // Setup all subscriptions
-    const unpaidSubscription = await setupSubscription('unpaid_bills', (payload) => handleRealtimeUpdate('unpaid', payload), 'unpaid_bills_changes');
-    const vendorSubscription = await setupSubscription('vendor_customers', (payload) => handleRealtimeUpdate('vendor', payload), 'vendor_customers_changes');
-    const deletedSubscription = await setupSubscription('deleted_customers', (payload) => handleRealtimeDeletedCustomers(payload), 'deleted_customers_changes');
+    // Setup all listeners
+    const unpaidListener = setupListener('unpaidBills', (data) => handleFirebaseRealtimeUpdate('unpaid', data));
+    const vendorListener = setupListener('vendorCustomers', (data) => handleFirebaseRealtimeUpdate('vendor', data));
+    const deletedListener = setupListener('deletedCustomers', (data) => handleFirebaseRealtimeDeletedCustomers(data));
 
-    // Add successful subscriptions to the array
-    if (unpaidSubscription) realtimeSubscriptions.push(unpaidSubscription);
-    if (vendorSubscription) realtimeSubscriptions.push(vendorSubscription);
-    if (deletedSubscription) realtimeSubscriptions.push(deletedSubscription);
+    // Add successful listeners to the array
+    if (unpaidListener) realtimeListeners.push(unpaidListener);
+    if (vendorListener) realtimeListeners.push(vendorListener);
+    if (deletedListener) realtimeListeners.push(deletedListener);
 
-    if (realtimeSubscriptions.length > 0) {
-      console.log(`✅ Real-time synchronization setup complete (${realtimeSubscriptions.length} subscriptions active)`);
+    if (realtimeListeners.length > 0) {
+      console.log(`✅ Firebase real-time synchronization setup complete (${realtimeListeners.length} listeners active)`);
       notify('Real-time synchronization is active', 'success');
     } else {
-      console.error('❌ No real-time subscriptions could be established');
+      console.error('❌ No Firebase real-time listeners could be established');
       notify('Real-time sync failed to initialize. Changes will only be saved locally.', 'error');
     }
 
   } catch (error) {
-    console.error('Failed to setup real-time sync:', error);
+    console.error('Failed to setup Firebase real-time sync:', error);
     notify('Real-time sync setup failed. Changes may not sync across devices.', 'error');
   }
 }
 
-function handleRealtimeUpdate(source, payload) {
-  console.log(`Real-time update received for ${source}:`, payload);
-
-  const { eventType, new: newRecord, old: oldRecord } = payload;
+async function handleFirebaseRealtimeUpdate(source, data) {
+  console.log(`Firebase real-time update received for ${source}:`, data);
   
-  switch (eventType) {
-    case 'INSERT':
-      handleRealtimeInsert(source, newRecord);
-      break;
-    case 'UPDATE':
-      handleRealtimeUpdateRecord(source, newRecord, oldRecord);
-      break;
-    case 'DELETE':
-      handleRealtimeDelete(source, oldRecord);
-      break;
-  }
-}
-
-function handleRealtimeInsert(source, newRecord) {
-  // Convert Supabase format back to JS format
-  const jsRecord = {
-    ...newRecord,
-    createdAt: newRecord.created_at ? new Date(newRecord.created_at).getTime() : Date.now(),
-    updatedAt: newRecord.updated_at ? new Date(newRecord.updated_at).getTime() : Date.now()
-  };
-
-  const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
-  
-  // Check if record already exists (avoid duplicates)
-  const existingIndex = list.findIndex(c => c.id === jsRecord.id);
-  if (existingIndex === -1) {
-    list.push(jsRecord);
-    console.log(`✅ Added new ${source} customer via real-time sync: ${jsRecord.name}`);
-    notify(`🔄 New customer added: ${jsRecord.name}`, 'info');
+  if (!data) {
+    console.log(`No data in Firebase for ${source}, clearing local data`);
+    const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
+    list.length = 0;
     renderAll();
-    // Also save to localStorage to maintain consistency
-    const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-    saveToStorage(storageKey, list);
-  } else {
-    console.log(`⚠️ Duplicate insert ignored for ${source} customer: ${jsRecord.name}`);
+    return;
   }
-}
-
-function handleRealtimeUpdateRecord(source, newRecord, oldRecord) {
-  // Convert Supabase format back to JS format
-  const jsRecord = {
-    ...newRecord,
-    createdAt: newRecord.created_at ? new Date(newRecord.created_at).getTime() : Date.now(),
-    updatedAt: newRecord.updated_at ? new Date(newRecord.updated_at).getTime() : Date.now()
-  };
-
-  const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
-  const index = list.findIndex(c => c.id === jsRecord.id);
   
-  if (index !== -1) {
-    // Check if this is an update from another device (compare timestamps)
-    const localRecord = list[index];
-    const remoteTimestamp = jsRecord.updatedAt || 0;
-    const localTimestamp = localRecord.updatedAt || 0;
+  // Convert Firebase object format to array format
+  const firebaseData = Object.values(data);
+  const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+  
+  try {
+    // Update local data with Firebase data
+    const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
     
-    if (remoteTimestamp > localTimestamp) {
-      list[index] = jsRecord;
-      console.log(`✅ Updated ${source} customer via real-time sync: ${jsRecord.name}`);
-      notify(`🔄 Customer updated: ${jsRecord.name}`, 'info');
-      renderAll();
-      // Also save to localStorage to maintain consistency
-      const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-      saveToStorage(storageKey, list);
-    } else {
-      console.log(`⚠️ Ignoring older update for ${source} customer: ${jsRecord.name}`);
-    }
-  } else {
-    console.log(`⚠️ Update received for unknown ${source} customer: ${jsRecord.name}`);
-  }
-}
-
-function handleRealtimeDelete(source, oldRecord) {
-  const list = source === 'unpaid' ? unpaidBills : vendorCustomers;
-  const index = list.findIndex(c => c.id === oldRecord.id);
-  
-  if (index !== -1) {
-    const deletedCustomer = list[index];
-    list.splice(index, 1);
-    console.log(`✅ Deleted ${source} customer via real-time sync: ${deletedCustomer.name}`);
-    notify(`🔄 Customer deleted: ${deletedCustomer.name}`, 'info');
+    // Clear and replace with Firebase data
+    list.length = 0;
+    list.push(...firebaseData);
+    
+    // Also update localStorage
+    localStorage.setItem(storageKey, JSON.stringify(firebaseData));
+    
+    console.log(`✅ Updated ${source} with ${firebaseData.length} customers from Firebase`);
     renderAll();
-    // Also save to localStorage to maintain consistency
-    const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-    saveToStorage(storageKey, list);
-  } else {
-    console.log(`⚠️ Delete received for unknown ${source} customer ID: ${oldRecord.id}`);
+    
+  } catch (error) {
+    console.error(`Failed to handle Firebase realtime update for ${source}:`, error);
   }
 }
 
-function handleRealtimeDeletedCustomers(payload) {
-  console.log('Real-time update received for deleted_customers:', payload);
-
-  const { eventType, new: newRecord, old: oldRecord } = payload;
+async function handleFirebaseRealtimeDeletedCustomers(data) {
+  console.log('Firebase real-time update received for deleted_customers:', data);
   
-  switch (eventType) {
-    case 'INSERT':
-      // Convert Supabase format back to JS format
-      const jsRecord = {
-        ...newRecord,
-        deletedAt: newRecord.deleted_at ? new Date(newRecord.deleted_at).getTime() : Date.now(),
-        createdAt: newRecord.created_at ? new Date(newRecord.created_at).getTime() : Date.now(),
-        updatedAt: newRecord.updated_at ? new Date(newRecord.updated_at).getTime() : Date.now(),
-        source: newRecord.original_table || newRecord.source
-      };
-
-      // Check if record already exists (avoid duplicates)
-      const existingIndex = deletedCustomers.findIndex(c => c.id === jsRecord.id);
-      if (existingIndex === -1) {
-        deletedCustomers.push(jsRecord);
-        console.log(`✅ Added new deleted customer via real-time sync: ${jsRecord.name}`);
-        notify(`🔄 Customer moved to recycle bin: ${jsRecord.name}`, 'info');
-        // Also save to localStorage to maintain consistency
-        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
-      } else {
-        console.log(`⚠️ Duplicate deleted customer ignored: ${jsRecord.name}`);
-      }
-      break;
-    case 'DELETE':
-      // Handle restore from recycle bin
-      const index = deletedCustomers.findIndex(c => c.id === oldRecord.id);
-      if (index !== -1) {
-        const restoredCustomer = deletedCustomers[index];
-        deletedCustomers.splice(index, 1);
-        console.log(`✅ Restored customer from recycle bin via real-time sync: ${restoredCustomer.name}`);
-        notify(`🔄 Customer restored: ${restoredCustomer.name}`, 'success');
-        // Also save to localStorage to maintain consistency
-        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
-      }
-      break;
+  if (!data) {
+    console.log('No data in Firebase for deleted_customers, clearing local data');
+    deletedCustomers.length = 0;
+    renderAll();
+    return;
+  }
+  
+  // Convert Firebase object format to array format
+  const firebaseData = Object.values(data);
+  
+  try {
+    // Update local deleted customers with Firebase data
+    deletedCustomers.length = 0;
+    deletedCustomers.push(...firebaseData);
+    
+    // Also update localStorage
+    localStorage.setItem(STORAGE_KEYS.deleted, JSON.stringify(firebaseData));
+    
+    console.log(`✅ Updated deleted customers with ${firebaseData.length} items from Firebase`);
+    renderAll();
+    
+  } catch (error) {
+    console.error('Failed to handle Firebase realtime update for deleted customers:', error);
   }
 }
 
 function cleanupRealtimeSync() {
-  console.log('Cleaning up real-time subscriptions...');
-  realtimeSubscriptions.forEach(subscription => {
-    if (subscription && subscription.unsubscribe) {
-      subscription.unsubscribe();
+  console.log('Cleaning up Firebase real-time listeners...');
+  realtimeListeners.forEach(listener => {
+    if (listener && listener.off) {
+      listener.off();
     }
   });
-  realtimeSubscriptions = [];
+  realtimeListeners = [];
 }
 
 // ── DATA LOADING ──
@@ -1898,8 +1795,8 @@ async function loadAll() {
     
     console.log(`Data loaded successfully: ${unpaidBills.length} unpaid, ${vendorCustomers.length} vendor, ${deletedCustomers.length} deleted`);
     
-    // Setup real-time synchronization if Supabase is available
-    if (window.isServerMode && window.supabase) {
+    // Setup real-time synchronization if Firebase is available
+    if (window.isServerMode && window.firebaseDatabase) {
       setupRealtimeSync();
     }
     
@@ -1978,25 +1875,25 @@ function checkAndRestoreFromBackup() {
   return false;
 }
 
-// Load customers from localStorage (or Supabase if available)
+// Load customers from localStorage (or Firebase if available)
 async function loadCustomersFromStorage(source) {
   const key = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
-  const tableName = SUPABASE_TABLE_MAP[key];
+  const firebasePath = FIREBASE_PATHS[key];
 
-  if (isServerMode && window.supabase && tableName) {
+  if (isServerMode && window.firebaseDatabase && firebasePath) {
     try {
-      console.log(`Attempting to load ${source} customers from Supabase table ${tableName}`);
-      const supabaseData = await loadFromSupabase(key);
-      if (supabaseData && supabaseData.length > 0) {
-        console.log(`Loaded ${supabaseData.length} ${source} customers from Supabase.`);
+      console.log(`Attempting to load ${source} customers from Firebase path ${firebasePath}`);
+      const firebaseData = await loadFromFirebase(key);
+      if (firebaseData && firebaseData.length > 0) {
+        console.log(`Loaded ${firebaseData.length} ${source} customers from Firebase.`);
         // Save to localStorage for offline access and as primary source for the app
-        localStorage.setItem(key, JSON.stringify(supabaseData));
-        return supabaseData;
+        localStorage.setItem(key, JSON.stringify(firebaseData));
+        return firebaseData;
       } else {
-        console.log(`No ${source} customers found in Supabase, falling back to localStorage.`);
+        console.log(`No ${source} customers found in Firebase, falling back to localStorage.`);
       }
     } catch (error) {
-      console.error(`Error loading ${source} customers from Supabase, falling back to localStorage:`, error);
+      console.error(`Error loading ${source} customers from Firebase, falling back to localStorage:`, error);
       notify(`Failed to load ${source} customers from cloud. Using local data.`, 'warning');
     }
   }
@@ -2027,24 +1924,24 @@ async function loadCustomersFromStorage(source) {
   }
 }
 
-// Load deleted customers from localStorage (or Supabase if available)
+// Load deleted customers from localStorage (or Firebase if available)
 async function loadDeletedCustomersFromStorage() {
   const key = STORAGE_KEYS.deleted;
-  const tableName = SUPABASE_TABLE_MAP[key];
+  const firebasePath = FIREBASE_PATHS[key];
 
-  if (isServerMode && window.supabase && tableName) {
+  if (isServerMode && window.firebaseDatabase && firebasePath) {
     try {
-      console.log('Attempting to load deleted customers from Supabase');
-      const supabaseData = await loadFromSupabase(key);
-      if (supabaseData && supabaseData.length > 0) {
-        console.log(`Loaded ${supabaseData.length} deleted customers from Supabase.`);
-        localStorage.setItem(key, JSON.stringify(supabaseData));
-        return supabaseData;
+      console.log('Attempting to load deleted customers from Firebase');
+      const firebaseData = await loadFromFirebase(key);
+      if (firebaseData && firebaseData.length > 0) {
+        console.log(`Loaded ${firebaseData.length} deleted customers from Firebase.`);
+        localStorage.setItem(key, JSON.stringify(firebaseData));
+        return firebaseData;
       } else {
-        console.log('No deleted customers found in Supabase, falling back to localStorage.');
+        console.log('No deleted customers found in Firebase, falling back to localStorage.');
       }
     } catch (error) {
-      console.error('Error loading deleted customers from Supabase, falling back to localStorage:', error);
+      console.error('Error loading deleted customers from Firebase, falling back to localStorage:', error);
       notify('Failed to load deleted customers from cloud. Using local data.', 'warning');
     }
   }
@@ -2335,12 +2232,12 @@ async function init() {
     console.warn('⚠️ Application starting with data integrity issues');
   }
   
-  // Setup real-time synchronization if Supabase is available
-  if (window.isServerMode && window.supabase) {
+  // Setup real-time synchronization if Firebase is available
+  if (window.isServerMode && window.firebaseDatabase) {
     console.log('Setting up real-time synchronization...');
     setupRealtimeSync().catch(err => {
       console.error('Failed to setup real-time sync:', err);
-      notify('Real-time sync setup failed. Changes may not sync across devices.', 'warning');
+      notify('Failed to setup real-time sync', 'error');
     });
   }
   
@@ -2355,10 +2252,10 @@ async function init() {
 // These functions can be called from the browser console to test real-time sync
 
 window.testRealtimeSync = async function() {
-  console.log('🧪 Testing real-time sync functionality...');
+  console.log('🧪 Testing Firebase real-time sync functionality...');
   
-  if (!window.supabase) {
-    console.error('❌ Supabase not available');
+  if (!window.firebaseDatabase) {
+    console.error('❌ Firebase Database not available');
     return false;
   }
   
@@ -2423,18 +2320,18 @@ window.cleanupTestSync = async function() {
 };
 
 window.checkSyncStatus = function() {
-  console.log('📊 Real-time sync status:');
+  console.log('📊 Firebase real-time sync status:');
   console.log('- Server mode:', window.isServerMode);
-  console.log('- Supabase available:', !!window.supabase);
-  console.log('- Active subscriptions:', realtimeSubscriptions.length);
+  console.log('- Firebase available:', !!window.firebaseDatabase);
+  console.log('- Active listeners:', realtimeListeners.length);
   console.log('- Unpaid bills count:', unpaidBills.length);
   console.log('- Vendor customers count:', vendorCustomers.length);
   console.log('- Deleted customers count:', deletedCustomers.length);
   
   return {
     serverMode: window.isServerMode,
-    supabaseAvailable: !!window.supabase,
-    activeSubscriptions: realtimeSubscriptions.length,
+    firebaseAvailable: !!window.firebaseDatabase,
+    activeListeners: realtimeListeners.length,
     unpaidBillsCount: unpaidBills.length,
     vendorCustomersCount: vendorCustomers.length,
     deletedCustomersCount: deletedCustomers.length
