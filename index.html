@@ -1885,14 +1885,11 @@ async function loadCustomersFromStorage(source) {
     try {
       console.log(`Attempting to load ${source} customers from Firebase path ${firebasePath}`);
       const firebaseData = await loadFromFirebase(key);
-      if (firebaseData && firebaseData.length > 0) {
-        console.log(`Loaded ${firebaseData.length} ${source} customers from Firebase.`);
-        // Save to localStorage for offline access and as primary source for the app
-        localStorage.setItem(key, JSON.stringify(firebaseData));
-        return firebaseData;
-      } else {
-        console.log(`No ${source} customers found in Firebase, falling back to localStorage.`);
-      }
+      // Always return Firebase data (even if empty) to ensure consistency
+      console.log(`Loaded ${firebaseData.length} ${source} customers from Firebase.`);
+      // Save to localStorage for offline access and as primary source for the app
+      localStorage.setItem(key, JSON.stringify(firebaseData));
+      return firebaseData;
     } catch (error) {
       console.error(`Error loading ${source} customers from Firebase, falling back to localStorage:`, error);
       notify(`Failed to load ${source} customers from cloud. Using local data.`, 'warning');
@@ -1934,13 +1931,10 @@ async function loadDeletedCustomersFromStorage() {
     try {
       console.log('Attempting to load deleted customers from Firebase');
       const firebaseData = await loadFromFirebase(key);
-      if (firebaseData && firebaseData.length > 0) {
-        console.log(`Loaded ${firebaseData.length} deleted customers from Firebase.`);
-        localStorage.setItem(key, JSON.stringify(firebaseData));
-        return firebaseData;
-      } else {
-        console.log('No deleted customers found in Firebase, falling back to localStorage.');
-      }
+      // Always return Firebase data (even if empty) to ensure consistency
+      console.log(`Loaded ${firebaseData.length} deleted customers from Firebase.`);
+      localStorage.setItem(key, JSON.stringify(firebaseData));
+      return firebaseData;
     } catch (error) {
       console.error('Error loading deleted customers from Firebase, falling back to localStorage:', error);
       notify('Failed to load deleted customers from cloud. Using local data.', 'warning');
