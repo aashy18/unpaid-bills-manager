@@ -1080,8 +1080,11 @@ function saveToStorage(key, data) {
     
     // Sync to server if in server mode
     if (isServerMode && window.supabase) {
-      console.log(`Attempting to sync data for key: ${key} to Supabase`);
-      syncToSupabase(key, data).catch(err => console.error('Background Supabase sync failed:', err)); // Non-blocking sync
+      console.log(`Immediately syncing data for key: ${key} to Supabase`);
+      syncToSupabase(key, data).catch(err => {
+        console.error('Immediate Supabase sync failed:', err);
+        notify(`Failed to sync to cloud: ${err.message}`, 'warning');
+      });
     }
     
     return true;
@@ -1468,65 +1471,97 @@ async function syncToSupabase(localStorageKey, data) {
     return;
   }
 
-  try {
-    console.log(`Syncing ${localStorageKey} to Supabase table ${tableName}...`);
-    // For simplicity, we'll delete all existing data for the current user and insert new data.
-    // In a real-world app, you'd want more granular upserts or diffing.
-    // IMPORTANT: Ensure Row Level Security (RLS) is correctly configured in Supabase
-    // to prevent accidental deletion of other users' data.
-    // The RLS policies in SUPABASE_SETUP.md are currently set to `true`, which means no restrictions.
-    // You should update these policies to filter by `auth.uid()` for multi-user security.
+  const maxRetries = 3;
+  let retryCount = 0;
 
-    // Transform data to match SQL schema (snake_case columns and specific field names)
-    const formattedData = data.map(item => {
-      const mapped = {
-        id: item.id,
-        name: item.name,
-        number: item.number,
-        balance: parseFloat(item.balance || 0),
-        payments: item.payments || [],
-        credits: item.credits || []
-      };
-
-      // Map camelCase JS dates to snake_case SQL columns as ISO strings
-      if (item.createdAt) mapped.created_at = new Date(item.createdAt).toISOString();
-      if (item.updatedAt) mapped.updated_at = new Date(item.updatedAt).toISOString();
+  const attemptSync = async () => {
+    try {
+      console.log(`Syncing ${localStorageKey} to Supabase table ${tableName}... (Attempt ${retryCount + 1}/${maxRetries})`);
       
-      if (tableName === 'deleted_customers') {
-        if (item.deletedAt) mapped.deleted_at = new Date(item.deletedAt).toISOString();
-        mapped.original_table = item.source || item.original_table || '';
+      // Transform data to match SQL schema (snake_case columns and specific field names)
+      const formattedData = data.map(item => {
+        const mapped = {
+          id: item.id,
+          name: item.name,
+          number: item.number,
+          balance: parseFloat(item.balance || 0),
+          payments: item.payments || [],
+          credits: item.credits || []
+        };
+
+        // Map camelCase JS dates to snake_case SQL columns as ISO strings
+        if (item.createdAt) mapped.created_at = new Date(item.createdAt).toISOString();
+        if (item.updatedAt) mapped.updated_at = new Date(item.updatedAt).toISOString();
+        
+        if (tableName === 'deleted_customers') {
+          if (item.deletedAt) mapped.deleted_at = new Date(item.deletedAt).toISOString();
+          mapped.original_table = item.source || item.original_table || '';
+        }
+        return mapped;
+      });
+      
+      // Use upsert for better real-time performance (update existing, insert new)
+      const { error: upsertError } = await window.supabase
+        .from(tableName)
+        .upsert(formattedData, { 
+          onConflict: 'id',  // Assuming 'id' is the primary key
+          ignoreDuplicates: false 
+        });
+
+      if (upsertError) {
+        console.error(`Error upserting data to Supabase table ${tableName}:`, upsertError);
+        
+        // Check if it's a network error that might be retryable
+        if (isRetryableError(upsertError) && retryCount < maxRetries - 1) {
+          retryCount++;
+          console.log(`Retryable error detected, retrying in 2 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return attemptSync();
+        }
+        
+        throw upsertError;
       }
-      return mapped;
-    });
+
+      console.log(`✅ Successfully synced ${data.length} items to Supabase table ${tableName}.`);
+      if (retryCount === 0) {
+        // Only show success notification on first attempt to avoid spam
+        notify(`Data synced to cloud for ${localStorageKey}`, 'success');
+      }
+
+    } catch (error) {
+      console.error(`Failed to sync ${localStorageKey} to Supabase:`, error);
+      
+      if (retryCount < maxRetries - 1 && isRetryableError(error)) {
+        retryCount++;
+        console.log(`Retryable error detected, retrying in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return attemptSync();
+      }
+      
+      // Final failure - show warning but don't block the app
+      notify(`Cloud sync failed for ${localStorageKey}. Data saved locally.`, 'warning');
+    }
+  };
+
+  // Helper function to determine if an error is retryable
+  function isRetryableError(error) {
+    const retryableErrors = [
+      'network',
+      'timeout',
+      'connection',
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'ENOTFOUND',
+      '502',
+      '503',
+      '504'
+    ];
     
-    // Delete existing data (assuming RLS handles user scope)
-    const { error: deleteError } = await window.supabase
-      .from(tableName)
-      .delete()
-      .neq('id', 'dummy_id_to_delete_all_for_user'); // Placeholder, RLS should filter by user
-
-    if (deleteError) {
-      console.error(`Error deleting existing data from Supabase table ${tableName}:`, deleteError);
-      throw deleteError;
-    }
-
-    // Now insert the new data
-    const { error: insertError } = await window.supabase
-      .from(tableName)
-      .insert(formattedData);
-
-    if (insertError) {
-      console.error(`Error inserting data into Supabase table ${tableName}:`, insertError);
-      throw insertError;
-    }
-
-    console.log(`Successfully synced ${data.length} items to Supabase table ${tableName}.`);
-    notify(`Data synced to cloud for ${localStorageKey}`, 'success');
-
-  } catch (error) {
-    console.error(`Failed to sync ${localStorageKey} to Supabase:`, error);
-    notify(`Failed to sync data to cloud for ${localStorageKey}: ${error.message}`, 'error');
+    const errorMessage = error.message || error.toString();
+    return retryableErrors.some(err => errorMessage.toLowerCase().includes(err.toLowerCase()));
   }
+
+  await attemptSync();
 }
 
 async function loadFromSupabase(localStorageKey) {
@@ -1610,42 +1645,61 @@ async function setupRealtimeSync() {
   });
   realtimeSubscriptions = [];
 
+  const setupSubscription = async (tableName, handler, channelName) => {
+    try {
+      const subscription = window.supabase
+        .channel(channelName)
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: tableName },
+          handler
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ Real-time sync active for ${tableName}`);
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error(`❌ Real-time sync error for ${tableName}`);
+            notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
+          } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
+            console.warn(`⚠️ Real-time sync connection lost for ${tableName}, attempting to reconnect...`);
+            // Attempt to reconnect after 3 seconds
+            setTimeout(() => {
+              if (window.isServerMode && window.supabase) {
+                setupSubscription(tableName, handler, channelName);
+              }
+            }, 3000);
+          }
+        });
+      
+      return subscription;
+    } catch (error) {
+      console.error(`Failed to setup subscription for ${tableName}:`, error);
+      notify(`Real-time sync setup failed for ${tableName}: ${error.message}`, 'error');
+      return null;
+    }
+  };
+
   try {
-    // Subscribe to unpaid_bills changes
-    const unpaidSubscription = window.supabase
-      .channel('unpaid_bills_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'unpaid_bills' },
-        (payload) => handleRealtimeUpdate('unpaid', payload)
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('Real-time sync active for unpaid_bills');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Real-time sync error for unpaid_bills');
-        }
-      });
+    // Setup all subscriptions
+    const unpaidSubscription = await setupSubscription('unpaid_bills', (payload) => handleRealtimeUpdate('unpaid', payload), 'unpaid_bills_changes');
+    const vendorSubscription = await setupSubscription('vendor_customers', (payload) => handleRealtimeUpdate('vendor', payload), 'vendor_customers_changes');
+    const deletedSubscription = await setupSubscription('deleted_customers', (payload) => handleRealtimeDeletedCustomers(payload), 'deleted_customers_changes');
 
-    // Subscribe to vendor_customers changes
-    const vendorSubscription = window.supabase
-      .channel('vendor_customers_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'vendor_customers' },
-        (payload) => handleRealtimeUpdate('vendor', payload)
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('Real-time sync active for vendor_customers');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Real-time sync error for vendor_customers');
-        }
-      });
+    // Add successful subscriptions to the array
+    if (unpaidSubscription) realtimeSubscriptions.push(unpaidSubscription);
+    if (vendorSubscription) realtimeSubscriptions.push(vendorSubscription);
+    if (deletedSubscription) realtimeSubscriptions.push(deletedSubscription);
 
-    realtimeSubscriptions.push(unpaidSubscription, vendorSubscription);
-    console.log('Real-time synchronization setup complete');
+    if (realtimeSubscriptions.length > 0) {
+      console.log(`✅ Real-time synchronization setup complete (${realtimeSubscriptions.length} subscriptions active)`);
+      notify('Real-time synchronization is active', 'success');
+    } else {
+      console.error('❌ No real-time subscriptions could be established');
+      notify('Real-time sync failed to initialize. Changes will only be saved locally.', 'error');
+    }
 
   } catch (error) {
     console.error('Failed to setup real-time sync:', error);
+    notify('Real-time sync setup failed. Changes may not sync across devices.', 'error');
   }
 }
 
@@ -1681,9 +1735,14 @@ function handleRealtimeInsert(source, newRecord) {
   const existingIndex = list.findIndex(c => c.id === jsRecord.id);
   if (existingIndex === -1) {
     list.push(jsRecord);
-    console.log(`Added new ${source} customer via real-time sync: ${jsRecord.name}`);
-    notify(`New customer added: ${jsRecord.name}`, 'info');
+    console.log(`✅ Added new ${source} customer via real-time sync: ${jsRecord.name}`);
+    notify(`🔄 New customer added: ${jsRecord.name}`, 'info');
     renderAll();
+    // Also save to localStorage to maintain consistency
+    const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    saveToStorage(storageKey, list);
+  } else {
+    console.log(`⚠️ Duplicate insert ignored for ${source} customer: ${jsRecord.name}`);
   }
 }
 
@@ -1706,10 +1765,17 @@ function handleRealtimeUpdateRecord(source, newRecord, oldRecord) {
     
     if (remoteTimestamp > localTimestamp) {
       list[index] = jsRecord;
-      console.log(`Updated ${source} customer via real-time sync: ${jsRecord.name}`);
-      notify(`Customer updated: ${jsRecord.name}`, 'info');
+      console.log(`✅ Updated ${source} customer via real-time sync: ${jsRecord.name}`);
+      notify(`🔄 Customer updated: ${jsRecord.name}`, 'info');
       renderAll();
+      // Also save to localStorage to maintain consistency
+      const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+      saveToStorage(storageKey, list);
+    } else {
+      console.log(`⚠️ Ignoring older update for ${source} customer: ${jsRecord.name}`);
     }
+  } else {
+    console.log(`⚠️ Update received for unknown ${source} customer: ${jsRecord.name}`);
   }
 }
 
@@ -1720,9 +1786,57 @@ function handleRealtimeDelete(source, oldRecord) {
   if (index !== -1) {
     const deletedCustomer = list[index];
     list.splice(index, 1);
-    console.log(`Deleted ${source} customer via real-time sync: ${deletedCustomer.name}`);
-    notify(`Customer deleted: ${deletedCustomer.name}`, 'info');
+    console.log(`✅ Deleted ${source} customer via real-time sync: ${deletedCustomer.name}`);
+    notify(`🔄 Customer deleted: ${deletedCustomer.name}`, 'info');
     renderAll();
+    // Also save to localStorage to maintain consistency
+    const storageKey = source === 'unpaid' ? STORAGE_KEYS.unpaid : STORAGE_KEYS.vendor;
+    saveToStorage(storageKey, list);
+  } else {
+    console.log(`⚠️ Delete received for unknown ${source} customer ID: ${oldRecord.id}`);
+  }
+}
+
+function handleRealtimeDeletedCustomers(payload) {
+  console.log('Real-time update received for deleted_customers:', payload);
+
+  const { eventType, new: newRecord, old: oldRecord } = payload;
+  
+  switch (eventType) {
+    case 'INSERT':
+      // Convert Supabase format back to JS format
+      const jsRecord = {
+        ...newRecord,
+        deletedAt: newRecord.deleted_at ? new Date(newRecord.deleted_at).getTime() : Date.now(),
+        createdAt: newRecord.created_at ? new Date(newRecord.created_at).getTime() : Date.now(),
+        updatedAt: newRecord.updated_at ? new Date(newRecord.updated_at).getTime() : Date.now(),
+        source: newRecord.original_table || newRecord.source
+      };
+
+      // Check if record already exists (avoid duplicates)
+      const existingIndex = deletedCustomers.findIndex(c => c.id === jsRecord.id);
+      if (existingIndex === -1) {
+        deletedCustomers.push(jsRecord);
+        console.log(`✅ Added new deleted customer via real-time sync: ${jsRecord.name}`);
+        notify(`🔄 Customer moved to recycle bin: ${jsRecord.name}`, 'info');
+        // Also save to localStorage to maintain consistency
+        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      } else {
+        console.log(`⚠️ Duplicate deleted customer ignored: ${jsRecord.name}`);
+      }
+      break;
+    case 'DELETE':
+      // Handle restore from recycle bin
+      const index = deletedCustomers.findIndex(c => c.id === oldRecord.id);
+      if (index !== -1) {
+        const restoredCustomer = deletedCustomers[index];
+        deletedCustomers.splice(index, 1);
+        console.log(`✅ Restored customer from recycle bin via real-time sync: ${restoredCustomer.name}`);
+        notify(`🔄 Customer restored: ${restoredCustomer.name}`, 'success');
+        // Also save to localStorage to maintain consistency
+        saveToStorage(STORAGE_KEYS.deleted, deletedCustomers);
+      }
+      break;
   }
 }
 
@@ -2199,12 +2313,111 @@ async function init() {
     console.warn('⚠️ Application starting with data integrity issues');
   }
   
+  // Setup real-time synchronization if Supabase is available
+  if (window.isServerMode && window.supabase) {
+    console.log('Setting up real-time synchronization...');
+    setupRealtimeSync().catch(err => {
+      console.error('Failed to setup real-time sync:', err);
+      notify('Real-time sync setup failed. Changes may not sync across devices.', 'warning');
+    });
+  }
+  
   // Update UI
   renderAll();
   document.getElementById('headerDate').textContent = new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
   
   console.log('Application initialization complete');
 }
+
+// ── DEBUG & TESTING FUNCTIONS ──
+// These functions can be called from the browser console to test real-time sync
+
+window.testRealtimeSync = async function() {
+  console.log('🧪 Testing real-time sync functionality...');
+  
+  if (!window.supabase) {
+    console.error('❌ Supabase not available');
+    return false;
+  }
+  
+  if (!window.isServerMode) {
+    console.error('❌ Not in server mode');
+    return false;
+  }
+  
+  try {
+    // Create a test customer
+    const testCustomer = {
+      id: 'test_' + Date.now(),
+      name: 'Test Customer (Real-time)',
+      number: 'TEST123',
+      balance: 100,
+      payments: [],
+      credits: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    console.log('📝 Adding test customer to unpaid bills...');
+    unpaidBills.push(testCustomer);
+    
+    // Save to trigger sync
+    await saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+    
+    console.log('✅ Test customer added. Check other browser tabs for real-time updates.');
+    console.log('🧹 To clean up, call: window.cleanupTestSync()');
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Test failed:', error);
+    return false;
+  }
+};
+
+window.cleanupTestSync = async function() {
+  console.log('🧹 Cleaning up test sync data...');
+  
+  try {
+    // Remove test customers
+    const testCustomers = unpaidBills.filter(c => c.name.includes('Test Customer (Real-time)'));
+    
+    for (const testCustomer of testCustomers) {
+      const index = unpaidBills.findIndex(c => c.id === testCustomer.id);
+      if (index !== -1) {
+        unpaidBills.splice(index, 1);
+        console.log(`🗑️ Removed test customer: ${testCustomer.name}`);
+      }
+    }
+    
+    // Save to trigger sync
+    await saveToStorage(STORAGE_KEYS.unpaid, unpaidBills);
+    
+    console.log('✅ Test sync cleanup complete');
+    return true;
+  } catch (error) {
+    console.error('❌ Cleanup failed:', error);
+    return false;
+  }
+};
+
+window.checkSyncStatus = function() {
+  console.log('📊 Real-time sync status:');
+  console.log('- Server mode:', window.isServerMode);
+  console.log('- Supabase available:', !!window.supabase);
+  console.log('- Active subscriptions:', realtimeSubscriptions.length);
+  console.log('- Unpaid bills count:', unpaidBills.length);
+  console.log('- Vendor customers count:', vendorCustomers.length);
+  console.log('- Deleted customers count:', deletedCustomers.length);
+  
+  return {
+    serverMode: window.isServerMode,
+    supabaseAvailable: !!window.supabase,
+    activeSubscriptions: realtimeSubscriptions.length,
+    unpaidBillsCount: unpaidBills.length,
+    vendorCustomersCount: vendorCustomers.length,
+    deletedCustomersCount: deletedCustomers.length
+  };
+};
 
 // ── HELPERS ──
 function evalFx(s){
