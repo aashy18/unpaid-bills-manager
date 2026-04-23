@@ -1665,7 +1665,7 @@ async function setupRealtimeSync() {
 
   // Clear existing subscriptions
   realtimeSubscriptions.forEach(subscription => {
-    if (subscription && subscription.unsubscribe) {
+    if (subscription) {
       subscription.unsubscribe();
     }
   });
@@ -1673,29 +1673,26 @@ async function setupRealtimeSync() {
 
   const setupSubscription = async (tableName, handler, channelName) => {
     try {
-      const channel = window.supabase.channel(channelName);
+      const channel = window.supabase
+        .channel(channelName)
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: tableName },
+          handler
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log(`✅ Real-time sync active for ${tableName}`);
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error(`❌ Real-time sync error for ${tableName}`);
+            notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
+          } else if (status === 'TIMED_OUT') {
+            console.warn(`⚠️ Real-time sync connection timed out for ${tableName}, Supabase will attempt to reconnect.`);
+          } else if (status === 'CLOSED') {
+            console.warn(`⚠️ Real-time sync connection closed for ${tableName}, Supabase will attempt to reconnect.`);
+          }
+        });
       
-      // Add the postgres_changes callback BEFORE subscribing
-      channel.on('postgres_changes', 
-        { event: '*', schema: 'public', table: tableName },
-        handler
-      );
-      
-      // Now subscribe
-      const subscription = channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`✅ Real-time sync active for ${tableName}`);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error(`❌ Real-time sync error for ${tableName}`);
-          notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
-        } else if (status === 'TIMED_OUT') {
-          console.warn(`⚠️ Real-time sync connection timed out for ${tableName}, Supabase will attempt to reconnect.`);
-        } else if (status === 'CLOSED') {
-          console.warn(`⚠️ Real-time sync connection closed for ${tableName}, Supabase will attempt to reconnect.`);
-        }
-      });
-      
-      return subscription;
+      return channel;
     } catch (error) {
       console.error(`Failed to setup subscription for ${tableName}:`, error);
       notify(`Real-time sync setup failed for ${tableName}: ${error.message}`, 'error');
