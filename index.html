@@ -21,17 +21,22 @@
   window.isServerMode = false;
 
   try {
+    const isSupabaseKeyValid = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.startsWith('eyJ');
+
     // Check if Supabase library is loaded
     if (typeof window.supabase === 'undefined') {
       console.warn('Supabase library not loaded. Running in localStorage-only mode.');
       window.isServerMode = false;
-    } else if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co') {
+    } else if (SUPABASE_URL && SUPABASE_URL !== 'https://YOUR_PROJECT_ID.supabase.co' && isSupabaseKeyValid) {
       supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       window.supabase = supabaseClient; // Make it globally accessible
       console.log('Supabase client initialized successfully!');
       window.isServerMode = true;
     } else {
-      console.warn('Supabase credentials not configured. Running in localStorage-only mode.');
+      if (!isSupabaseKeyValid) {
+        console.error('Supabase ANON_KEY appears invalid. It should start with "eyJ". Please check SUPABASE_SETUP.md.');
+      }
+      console.warn('Supabase credentials not fully configured or invalid. Running in localStorage-only mode.');
       window.isServerMode = false;
     }
   } catch (error) {
@@ -1163,7 +1168,7 @@ async function signUpUser(email, password, fullName) {
   try {
     if (!window.supabase) {
       console.log('Supabase not available, using localStorage signup');
-      return signUpUserLocalStorage(email, password, fullName);
+      return null; // Supabase not available, let createAccount handle localStorage
     }
     
     const { data, error } = await window.supabase.auth.signUp({
@@ -1178,11 +1183,11 @@ async function signUpUser(email, password, fullName) {
     
     if (error) {
       console.error('Supabase signup error:', error);
-      // Fallback to localStorage
-      return signUpUserLocalStorage(email, password, fullName);
+      return null; // Supabase signup failed, let createAccount handle localStorage
     }
     
     console.log('User signed up successfully with Supabase');
+    // Supabase user object is returned, createAccount will use this
     return data;
   } catch (error) {
     console.error('Error signing up user:', error);
@@ -1194,7 +1199,7 @@ async function signUpUser(email, password, fullName) {
 async function signInUser(email, password) {
   try {
     if (!window.supabase) {
-      console.log('Supabase not available, using localStorage signin');
+      console.log('Supabase not available, attempting localStorage signin');
       return signInUserLocalStorage(email, password);
     }
     
@@ -1205,8 +1210,7 @@ async function signInUser(email, password) {
     
     if (error) {
       console.error('Supabase signin error:', error);
-      // Fallback to localStorage
-      return signInUserLocalStorage(email, password);
+      return null; // Supabase signin failed, let doLogin handle localStorage
     }
     
     console.log('User signed in successfully with Supabase');
@@ -1237,13 +1241,6 @@ async function signOutUser() {
     console.error('Error signing out user:', error);
     return signOutUserLocalStorage();
   }
-}
-
-// Fallback localStorage functions
-async function signUpUserLocalStorage(email, password, fullName) {
-  console.log('Using localStorage signup fallback');
-  // Implementation for localStorage signup
-  return { user: { email, user_metadata: { full_name: fullName } } };
 }
 
 async function signInUserLocalStorage(email, password) {
@@ -1662,14 +1659,10 @@ async function setupRealtimeSync() {
         } else if (status === 'CHANNEL_ERROR') {
           console.error(`❌ Real-time sync error for ${tableName}`);
           notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
-        } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
-          console.warn(`⚠️ Real-time sync connection lost for ${tableName}, attempting to reconnect...`);
-          // Attempt to reconnect after 3 seconds
-          setTimeout(() => {
-            if (window.isServerMode && window.supabase) {
-              setupSubscription(tableName, handler, channelName);
-            }
-          }, 3000);
+        } else if (status === 'TIMED_OUT') {
+          console.warn(`⚠️ Real-time sync connection timed out for ${tableName}, Supabase will attempt to reconnect.`);
+        } else if (status === 'CLOSED') {
+          console.warn(`⚠️ Real-time sync connection closed for ${tableName}, Supabase will attempt to reconnect.`);
         }
       });
       
@@ -2231,11 +2224,11 @@ async function createAccount() {
     // Try Supabase Auth first if username looks like email
     if (username.includes('@')) {
       console.log('Attempting Supabase account creation with email');
-      const result = await signUpUser(username, password, fullName);
+      const supabaseResult = await signUpUser(username, password, fullName);
       
-      if (result && result.user) {
+      if (supabaseResult && supabaseResult.user) {
         closeCreateAccount();
-        notify('Account created successfully! You can now login with your email.');
+        notify('Account created successfully with Supabase! You can now login with your email.');
         return;
       }
     }
