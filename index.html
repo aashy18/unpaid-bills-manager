@@ -1647,28 +1647,31 @@ async function setupRealtimeSync() {
 
   const setupSubscription = async (tableName, handler, channelName) => {
     try {
-      const subscription = window.supabase
-        .channel(channelName)
-        .on('postgres_changes', 
-          { event: '*', schema: 'public', table: tableName },
-          handler
-        )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log(`✅ Real-time sync active for ${tableName}`);
-          } else if (status === 'CHANNEL_ERROR') {
-            console.error(`❌ Real-time sync error for ${tableName}`);
-            notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
-          } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
-            console.warn(`⚠️ Real-time sync connection lost for ${tableName}, attempting to reconnect...`);
-            // Attempt to reconnect after 3 seconds
-            setTimeout(() => {
-              if (window.isServerMode && window.supabase) {
-                setupSubscription(tableName, handler, channelName);
-              }
-            }, 3000);
-          }
-        });
+      const channel = window.supabase.channel(channelName);
+      
+      // Add the postgres_changes callback BEFORE subscribing
+      channel.on('postgres_changes', 
+        { event: '*', schema: 'public', table: tableName },
+        handler
+      );
+      
+      // Now subscribe
+      const subscription = channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Real-time sync active for ${tableName}`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Real-time sync error for ${tableName}`);
+          notify(`Real-time sync failed for ${tableName}. Changes may not sync across devices.`, 'warning');
+        } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
+          console.warn(`⚠️ Real-time sync connection lost for ${tableName}, attempting to reconnect...`);
+          // Attempt to reconnect after 3 seconds
+          setTimeout(() => {
+            if (window.isServerMode && window.supabase) {
+              setupSubscription(tableName, handler, channelName);
+            }
+          }, 3000);
+        }
+      });
       
       return subscription;
     } catch (error) {
