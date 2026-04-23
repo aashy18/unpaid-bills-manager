@@ -21,7 +21,7 @@
   window.isServerMode = false;
 
   try {
-    const isSupabaseKeyValid = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.startsWith('eyJ');
+    const isSupabaseKeyValid = SUPABASE_ANON_KEY && (SUPABASE_ANON_KEY.startsWith('eyJ') || SUPABASE_ANON_KEY.startsWith('sb_'));
 
     // Check if Supabase library is loaded
     if (typeof window.supabase === 'undefined') {
@@ -34,7 +34,7 @@
       window.isServerMode = true;
     } else {
       if (!isSupabaseKeyValid) {
-        console.error('Supabase ANON_KEY appears invalid. It should start with "eyJ". Please check SUPABASE_SETUP.md.');
+        console.error('Supabase ANON_KEY appears invalid. It should start with "eyJ" or "sb_". Please check SUPABASE_SETUP.md.');
       }
       console.warn('Supabase credentials not fully configured or invalid. Running in localStorage-only mode.');
       window.isServerMode = false;
@@ -1144,9 +1144,38 @@ function initializeSocket() {
   }
 }
 
-// Send data to server for sync (temporarily disabled)
-function syncToServer() {
-  console.log('📤 Server sync temporarily disabled');
+// Send data to server for sync
+async function syncToServer() {
+  if (!window.isServerMode || !window.supabase) {
+    console.log('📤 Server sync not available - running in localStorage mode');
+    return;
+  }
+  
+  try {
+    console.log('📤 Syncing all data to server...');
+    
+    // Sync all data types
+    const syncPromises = [];
+    
+    if (unpaidBills.length > 0) {
+      syncPromises.push(syncToSupabase(STORAGE_KEYS.unpaid, unpaidBills));
+    }
+    
+    if (vendorCustomers.length > 0) {
+      syncPromises.push(syncToSupabase(STORAGE_KEYS.vendor, vendorCustomers));
+    }
+    
+    if (deletedCustomers.length > 0) {
+      syncPromises.push(syncToSupabase(STORAGE_KEYS.deleted, deletedCustomers));
+    }
+    
+    await Promise.all(syncPromises);
+    console.log('✅ All data synced to server successfully');
+    
+  } catch (error) {
+    console.error('❌ Failed to sync data to server:', error);
+    notify('Failed to sync data to cloud', 'error');
+  }
 }
 
 // ── USER MANAGEMENT ──
