@@ -2717,7 +2717,7 @@ async function saveCustomer(){
       const list = currentList === 'unpaid' ? unpaidBills : vendorCustomers;
       const index = list.findIndex(c => c.id === currentId);
       if(index !== -1) {
-        const updatedCustomer = { ...list[index], name, number, balance: amount };
+        const updatedCustomer = { ...list[index], name, number, balance: amount, updatedAt: Date.now() };
         
         // Save using new storage system
         const savedCustomer = await saveCustomerToStorage(updatedCustomer, currentList);
@@ -3105,6 +3105,7 @@ async function recordPayment(){
     }
     
     updatedCust.payments.push(paymentEntry);
+    updatedCust.updatedAt = Date.now(); // Ensure timestamp is updated for real-time sync
     list[index] = updatedCust;
     
     // Save using new storage system
@@ -3931,6 +3932,7 @@ async function saveCredit(){
       updatedCust.balance = currentAmount + parseFloat(amount);
     }
     
+    updatedCust.updatedAt = Date.now(); // Ensure timestamp is updated for real-time sync
     list[index] = updatedCust;
     
     // Save using new storage system
